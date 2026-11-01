@@ -9,8 +9,8 @@
      Part 1 — Game logic
      ===================================================================== */
 
-  var COLS = 16;
-  var ROWS = 16;
+  var COLS = 24;
+  var ROWS = 24;
 
   var MAX_QUEUE = 4;         // buffered turns between two moves (was 2)
 
@@ -110,7 +110,7 @@
       mode: mode.id,
       cols: COLS,
       rows: ROWS,
-      snake: [{ x: cx, y: cy }, { x: cx - 1, y: cy }, { x: cx - 2, y: cy }], // head first
+      snake: [{ x: cx, y: cy }, { x: cx - 1, y: cy }], // head first
       dir: { x: 1, y: 0 },
       score: 0,
       nextNumber: 1,

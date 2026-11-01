@@ -80,7 +80,7 @@ Open `script.js` and edit the constants at the top.
 
 | Constant | Meaning | Default |
 | --- | --- | --- |
-| `COLS`, `ROWS` | Board size in cells | 16 x 16 |
+| `COLS`, `ROWS` | Board size in cells | 24 x 24 |
 | `MAX_QUEUE` | Quick turns that can be buffered | 4 |
 | `MODES.<mode>.levelEvery` | Points needed per level | 5 (Normal), 3 (No walls) |
 | `MODES.<mode>.startInterval` | Milliseconds per move at level 1 | 150 / 140 |
