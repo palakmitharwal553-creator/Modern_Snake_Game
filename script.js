@@ -443,13 +443,94 @@
     { name: 'Explorer',  min: 10,  color: '#35e0ff' },
     { name: 'Skilled',   min: 25,  color: '#34d985' },
     { name: 'Pro',       min: 50,  color: '#cfd8e6' },
-    { name: 'Excellent', min: 80,  color: '#ffb703' },
+    { name: 'Expert',    min: 80,  color: '#ffb703' },
     { name: 'Legend',    min: 120, color: '#a78bfa' }
   ];
   var CERT_MIN_SCORE = 50;           // certificate unlocks at the Pro rank
   var NAME_KEY = 'numberSnake.playerName';
   var curRankIdx = 0;
   var certData = null;
+
+  /* Saved progress: games played, certificates, top rank and the last few runs. */
+  var PROGRESS_KEY = 'numberSnake.progress';
+  var HISTORY_MAX = 8;
+
+  function emptyProgress() { return { games: 0, certs: 0, topRank: 0, history: [] }; }
+
+  function loadProgress() {
+    try {
+      var p = JSON.parse(window.localStorage.getItem(PROGRESS_KEY));
+      if (p && typeof p === 'object') {
+        return {
+          games: Math.max(0, parseInt(p.games, 10) || 0),
+          certs: Math.max(0, parseInt(p.certs, 10) || 0),
+          topRank: Math.min(RANKS.length - 1, Math.max(0, parseInt(p.topRank, 10) || 0)),
+          history: Array.isArray(p.history) ? p.history.slice(0, HISTORY_MAX) : []
+        };
+      }
+    } catch (e) { /* no saved progress */ }
+    return emptyProgress();
+  }
+
+  function saveProgress() {
+    try { window.localStorage.setItem(PROGRESS_KEY, JSON.stringify(progress)); } catch (e) { /* storage unavailable */ }
+  }
+
+  var progress = loadProgress();
+
+  function recordRun(score, rankIdx, label) {
+    progress.games += 1;
+    if (rankIdx > progress.topRank) progress.topRank = rankIdx;
+    progress.history.unshift({ s: score, r: rankIdx, m: label, t: Date.now() });
+    progress.history.length = Math.min(progress.history.length, HISTORY_MAX);
+    saveProgress();
+  }
+
+  function renderProgress() {
+    $('p-games').textContent = progress.games;
+    $('p-best-normal').textContent = bests.normal;
+    $('p-best-nowalls').textContent = bests.nowalls;
+    $('p-rank').textContent = RANKS[progress.topRank].name;
+    $('p-rank').style.color = RANKS[progress.topRank].color;
+    $('p-certs').textContent = progress.certs;
+    var list = $('p-history');
+    list.textContent = '';
+    if (!progress.history.length) {
+      var empty = document.createElement('li');
+      empty.className = 'prog-empty';
+      empty.textContent = 'No games yet. Play one!';
+      list.appendChild(empty);
+      return;
+    }
+    progress.history.forEach(function (h) {
+      var li = document.createElement('li');
+      var rk = RANKS[Math.min(RANKS.length - 1, Math.max(0, h.r | 0))];
+      var date = new Date(h.t).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+      var a = document.createElement('b');
+      a.textContent = h.s;
+      var b = document.createElement('span');
+      b.textContent = rk.name;
+      b.style.color = rk.color;
+      var c = document.createElement('span');
+      c.className = 'prog-meta';
+      c.textContent = String(h.m || '') + ' \u00b7 ' + date;
+      li.appendChild(a); li.appendChild(b); li.appendChild(c);
+      list.appendChild(li);
+    });
+  }
+
+  function resetProgress() {
+    if (!window.confirm('Reset all saved scores and progress?')) return;
+    progress = emptyProgress();
+    saveProgress();
+    bests = { normal: 0, nowalls: 0 };
+    saveBest('normal', 0);
+    saveBest('nowalls', 0);
+    best = 0;
+    bestAtStart = 0;
+    updateHud();
+    renderProgress();
+  }
 
   function rankIndexFor(score) {
     var idx = 0;
@@ -512,7 +593,7 @@
 
     c.fillStyle = '#eaf0fa';
     c.font = '400 38px ' + fontFamily;
-    c.fillText('for scoring ' + data.score + ' points in ' + data.mode + ' mode', W / 2, 670);
+    c.fillText('for reaching ' + rank.min + ' points in ' + data.mode + ' mode', W / 2, 670);
     c.fillText('and earning the rank of', W / 2, 725);
 
     c.fillStyle = accent;
@@ -521,7 +602,7 @@
 
     c.fillStyle = '#93a0b6';
     c.font = '400 32px ' + fontFamily;
-    c.fillText('Date: ' + new Date().toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' }), W / 2, 980);
+    c.fillText('Run score: ' + data.score + '   |   Date: ' + new Date().toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' }), W / 2, 980);
 
     // Seal
     c.beginPath(); c.arc(W - 270, H - 250, 90, 0, Math.PI * 2);
@@ -530,24 +611,27 @@
     c.strokeStyle = '#0a0d13'; c.lineWidth = 4; c.stroke();
     c.fillStyle = '#0a0d13';
     c.font = '800 60px ' + fontFamily;
-    c.fillText(String(data.score), W - 270, H - 230);
+    c.fillText(String(rank.min), W - 270, H - 230);
     return cv;
   }
 
-  function downloadCertificate() {
+  function downloadCertificate(rankIdx) {
     if (!certData) return;
     var input = $('cert-name');
     var name = (input.value || '').replace(/\s+/g, ' ').trim().slice(0, 30) || 'Player';
     saveName(name);
-    drawCertificate(name, certData).toBlob(function (blob) {
+    drawCertificate(name, { score: certData.score, mode: certData.mode, rankIdx: rankIdx }).toBlob(function (blob) {
       if (!blob) return;
       var url = URL.createObjectURL(blob);
       var a = document.createElement('a');
       a.href = url;
-      a.download = 'NumberSnake-Certificate-' + RANKS[certData.rankIdx].name + '.png';
+      a.download = 'NumberSnake-Certificate-' + RANKS[rankIdx].name + '.png';
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
+      progress.certs += 1;
+      saveProgress();
+      renderProgress();
       setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
     }, 'image/png');
   }
@@ -713,8 +797,26 @@
     rankLine.style.color = RANKS[endRank].color;
     var canCert = state.score >= CERT_MIN_SCORE;
     $('cert-box').hidden = !canCert;
-    certData = canCert ? { score: state.score, rankIdx: endRank, mode: MODES[modeId].label } : null;
-    if (canCert) $('cert-name').value = loadName();
+    recordRun(state.score, endRank, MODES[modeId].label);
+    renderProgress();
+    certData = canCert ? { score: state.score, mode: MODES[modeId].label } : null;
+    var certBtns = $('cert-btns');
+    certBtns.textContent = '';
+    if (canCert) {
+      $('cert-name').value = loadName();
+      RANKS.forEach(function (rk, idx) {
+        if (rk.min < CERT_MIN_SCORE || state.score < rk.min) return;
+        var b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'btn btn-gold';
+        b.textContent = rk.name + ' certificate (' + rk.min + '+)';
+        b.addEventListener('click', function (e) {
+          downloadCertificate(idx);
+          if (e.detail !== 0) b.blur();
+        });
+        certBtns.appendChild(b);
+      });
+    }
     $('new-record').hidden = !(state.score > 0 && state.score > bestAtStart);
 
     overLockUntil = performance.now() + OVER_LOCK;
@@ -1347,7 +1449,8 @@
   bindButton($('btn-pause-menu'), toMenu);
   bindButton($('btn-again'), playAgain);
   bindButton($('btn-menu'), toMenu);
-  bindButton($('btn-cert'), downloadCertificate);
+  bindButton($('btn-reset-progress'), resetProgress);
+  renderProgress();
   bindButton(pauseBtn, togglePause);
   bindButton(restartBtn, function () { if (status !== 'start') startGame(); });
 

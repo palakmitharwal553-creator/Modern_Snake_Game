@@ -58,12 +58,16 @@ Your rank depends on your score in the current run and is shown under the score.
 | Explorer | 10 - 24 |
 | Skilled | 25 - 49 |
 | Pro | 50 - 79 |
-| Excellent | 80 - 119 |
+| Expert | 80 - 119 |
 | Legend | 120 and above |
 
-Reach **50 points (Pro)** or more and the game over screen offers a **Download Certificate** button. Enter your name and the game creates a PNG certificate with your name, score, mode, rank and date. Your name is remembered in the browser.
+You earn a certificate at **50 (Pro)**, **80 (Expert)** and **120 (Legend)** points. On the game over screen enter your name and download one PNG certificate for every milestone you reached in that run. Each certificate shows your name, the milestone, mode, rank, your run score and the date. Your name is remembered in the browser.
 
 The snake starts with **2 blocks** on a **24 x 24** board.
+
+### Your progress
+
+Under "How to play" there is a **Your progress** panel. It shows games played, your highest rank, your best score in each mode, how many certificates you downloaded, and your last 8 runs (score, rank, mode, date). Everything is saved in the browser (`localStorage`, key `numberSnake.progress`). The **Reset progress** button clears the progress and the saved high scores.
 
 ### Controls
 

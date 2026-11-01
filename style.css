@@ -785,3 +785,40 @@ body {
 }
 
 .btn-gold:hover { filter: brightness(1.08); }
+
+/* ---------- Your progress ---------- */
+
+.prog-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+
+.prog-item {
+  padding: 8px 10px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+}
+
+.prog-item strong { font-size: 1.15rem; font-variant-numeric: tabular-nums; }
+
+.prog-title { margin: 14px 0 6px; font-size: 0.85rem; color: var(--muted); letter-spacing: 0.06em; text-transform: uppercase; }
+
+.prog-history { list-style: none; margin: 0 0 12px; padding: 0; display: grid; gap: 6px; }
+
+.prog-history li {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0 10px;
+  align-items: baseline;
+  padding: 6px 10px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.prog-history b { font-size: 1.1rem; font-variant-numeric: tabular-nums; }
+.prog-meta { grid-column: 1 / -1; font-size: 0.74rem; color: var(--muted); }
+.prog-empty { display: block; color: var(--muted); }
+.btn-small { min-height: 36px; font-size: 0.85rem; padding: 0 14px; }
+
+.cert-btns { display: flex; flex-direction: column; gap: 8px; width: 100%; }

@@ -136,7 +136,7 @@
           <p class="rank-line" id="over-rank"></p>
           <div class="cert-box" id="cert-box" hidden>
             <input type="text" id="cert-name" class="cert-input" maxlength="30" placeholder="Your name" autocomplete="name" aria-label="Name for certificate">
-            <button type="button" id="btn-cert" class="btn btn-gold">Download Certificate</button>
+            <div class="cert-btns" id="cert-btns"></div>
           </div>
           <div class="overlay-actions">
             <button type="button" id="btn-again" class="btn btn-primary">Play Again</button>
@@ -161,6 +161,8 @@
         <li>The game speeds up as your score climbs, up to a playable limit.</li>
         <li><strong>Normal:</strong> touching a wall or your own body ends the game.</li>
         <li><strong>No walls:</strong> the edges wrap around. You only die on your own body or a bomb, but the game speeds up sooner and each number adds 2 segments.</li>
+        <li><strong>Ranks:</strong> your score decides your rank: Rookie, Explorer (10), Skilled (25), Pro (50), Expert (80) and Legend (120).</li>
+        <li><strong>Certificate:</strong> you earn a certificate at 50 (Pro), 80 (Expert) and 120 (Legend) points. Enter your name on the game over screen and download it.</li>
       </ol>
       <h3 class="rules-sub">Power-ups</h3>
       <ul class="legend">
@@ -169,6 +171,20 @@
         <li><svg class="ic" aria-hidden="true"><use href="#icon-bomb"/></svg><span><strong>Bomb</strong> ends the game if you eat it. It disappears on its own after a few seconds.</span></li>
       </ul>
       <p class="rules-controls"><strong>Controls:</strong> arrow keys or WASD to steer, Space or P to pause. On the start screen, left / right (or 1 / 2) switches mode. On a touch screen, swipe on the board or use the arrow pad.</p>
+
+      <h3 class="rules-sub">Your progress</h3>
+      <div class="progress">
+        <div class="prog-grid">
+          <div class="prog-item"><span class="stat-label">Games played</span><strong id="p-games">0</strong></div>
+          <div class="prog-item"><span class="stat-label">Highest rank</span><strong id="p-rank">Rookie</strong></div>
+          <div class="prog-item"><span class="stat-label">Best: Normal</span><strong id="p-best-normal">0</strong></div>
+          <div class="prog-item"><span class="stat-label">Best: No walls</span><strong id="p-best-nowalls">0</strong></div>
+          <div class="prog-item"><span class="stat-label">Certificates</span><strong id="p-certs">0</strong></div>
+        </div>
+        <h4 class="prog-title">Recent runs</h4>
+        <ul class="prog-history" id="p-history"></ul>
+        <button type="button" id="btn-reset-progress" class="btn btn-ghost btn-small">Reset progress</button>
+      </div>
     </section>
 
   </main>
