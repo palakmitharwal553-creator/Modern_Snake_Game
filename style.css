@@ -739,3 +739,49 @@ body {
   .mode-btn { min-height: 38px; padding: 4px 8px; }
   .over-mode { display: none; }
 }
+
+/* ---------- Ranks and certificate ---------- */
+
+.rank-sub { font-weight: 700; transition: color 0.3s ease; }
+
+.rank-line {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.cert-box {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  max-width: 420px;
+}
+
+.cert-box[hidden] { display: none; }
+
+.cert-input {
+  flex: 1 1 150px;
+  min-width: 0;
+  padding: 10px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+  text-align: center;
+}
+
+.cert-input:focus { outline: 2px solid var(--gold); outline-offset: 1px; }
+
+.btn-gold {
+  background: linear-gradient(180deg, #ffd23f, var(--gold));
+  color: #2a1c00;
+  border: 0;
+  font-weight: 800;
+}
+
+.btn-gold:hover { filter: brightness(1.08); }

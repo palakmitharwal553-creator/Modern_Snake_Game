@@ -48,6 +48,23 @@ Power-ups and bombs appear at random every 5 to 9 seconds and vanish after a whi
 
 Active power-ups show as small timer chips in the top-left corner of the board.
 
+### Ranks and certificate
+
+Your rank depends on your score in the current run and is shown under the score. A short animation plays when you reach a new rank.
+
+| Rank | Score |
+| --- | --- |
+| Rookie | 0 - 9 |
+| Explorer | 10 - 24 |
+| Skilled | 25 - 49 |
+| Pro | 50 - 79 |
+| Excellent | 80 - 119 |
+| Legend | 120 and above |
+
+Reach **50 points (Pro)** or more and the game over screen offers a **Download Certificate** button. Enter your name and the game creates a PNG certificate with your name, score, mode, rank and date. Your name is remembered in the browser.
+
+The snake starts with **2 blocks** on a **24 x 24** board.
+
 ### Controls
 
 | Action | Keyboard | Touch |
@@ -92,6 +109,8 @@ Open `script.js` and edit the constants at the top.
 | `ITEM_LIFE` | How long each item stays on the board | bomb 9 s, others 12 s |
 | `SPAWN_MIN`, `SPAWN_MAX` | Gap between spawns | 5000, 9000 |
 | `MAX_BOMBS`, `BOMB_MIN_SCORE`, `BOMB_SAFE_DIST` | Bomb limits | 2, 3, 4 |
+| `RANKS` | Rank names, minimum score and colour | Rookie to Legend |
+| `CERT_MIN_SCORE` | Score needed to unlock the certificate | 50 |
 | `WEIGHTS` | How likely each item type is | 3 / 3 / 3 |
 
 Colours live in the `:root` block of `style.css` and in the `COLORS` object in `script.js`.

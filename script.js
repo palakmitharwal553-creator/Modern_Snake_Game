@@ -352,6 +352,7 @@
   var levelEl = $('level');
   var speedEl = $('speed');
   var announceEl = $('announce');
+  var rankEl = $('rank');
   var pauseBtn = $('btn-pause');
   var restartBtn = $('btn-restart');
   var modePill = $('mode-pill');
@@ -435,6 +436,122 @@
     try { window.localStorage.setItem(MODE_KEY, id); } catch (e) { /* storage unavailable */ }
   }
 
+  /* ---------- Ranks and certificate ---------- */
+
+  var RANKS = [
+    { name: 'Rookie',    min: 0,   color: '#93a0b6' },
+    { name: 'Explorer',  min: 10,  color: '#35e0ff' },
+    { name: 'Skilled',   min: 25,  color: '#34d985' },
+    { name: 'Pro',       min: 50,  color: '#cfd8e6' },
+    { name: 'Excellent', min: 80,  color: '#ffb703' },
+    { name: 'Legend',    min: 120, color: '#a78bfa' }
+  ];
+  var CERT_MIN_SCORE = 50;           // certificate unlocks at the Pro rank
+  var NAME_KEY = 'numberSnake.playerName';
+  var curRankIdx = 0;
+  var certData = null;
+
+  function rankIndexFor(score) {
+    var idx = 0;
+    for (var i = 0; i < RANKS.length; i++) if (score >= RANKS[i].min) idx = i;
+    return idx;
+  }
+
+  function loadName() {
+    try { return window.localStorage.getItem(NAME_KEY) || ''; } catch (e) { return ''; }
+  }
+
+  function saveName(v) {
+    try { window.localStorage.setItem(NAME_KEY, v); } catch (e) { /* storage unavailable */ }
+  }
+
+  function fitText(c, text, maxWidth, startSize, weight) {
+    var size = startSize;
+    do {
+      c.font = weight + ' ' + size + 'px ' + fontFamily;
+      size -= 4;
+    } while (c.measureText(text).width > maxWidth && size > 24);
+  }
+
+  function drawCertificate(name, data) {
+    var W = 1600, H = 1130;
+    var cv = document.createElement('canvas');
+    cv.width = W; cv.height = H;
+    var c = cv.getContext('2d');
+    var rank = RANKS[data.rankIdx];
+    var accent = rank.color;
+
+    var bg = c.createLinearGradient(0, 0, W, H);
+    bg.addColorStop(0, '#0a0d13');
+    bg.addColorStop(1, '#151c2c');
+    c.fillStyle = bg;
+    c.fillRect(0, 0, W, H);
+
+    c.strokeStyle = accent; c.lineWidth = 10;
+    c.strokeRect(40, 40, W - 80, H - 80);
+    c.lineWidth = 2;
+    c.strokeRect(64, 64, W - 128, H - 128);
+
+    c.textAlign = 'center';
+    c.fillStyle = '#ff2e3e';
+    c.font = '800 44px ' + fontFamily;
+    c.fillText('NUMBER SNAKE', W / 2, 170);
+
+    c.fillStyle = '#eaf0fa';
+    c.font = '800 78px ' + fontFamily;
+    c.fillText('CERTIFICATE OF ACHIEVEMENT', W / 2, 290);
+
+    c.fillStyle = '#93a0b6';
+    c.font = '400 36px ' + fontFamily;
+    c.fillText('This certificate is proudly presented to', W / 2, 400);
+
+    c.fillStyle = accent;
+    fitText(c, name, W - 380, 120, '800');
+    c.fillText(name, W / 2, 540);
+    c.fillRect(W / 2 - 360, 575, 720, 3);
+
+    c.fillStyle = '#eaf0fa';
+    c.font = '400 38px ' + fontFamily;
+    c.fillText('for scoring ' + data.score + ' points in ' + data.mode + ' mode', W / 2, 670);
+    c.fillText('and earning the rank of', W / 2, 725);
+
+    c.fillStyle = accent;
+    c.font = '800 96px ' + fontFamily;
+    c.fillText(rank.name.toUpperCase(), W / 2, 840);
+
+    c.fillStyle = '#93a0b6';
+    c.font = '400 32px ' + fontFamily;
+    c.fillText('Date: ' + new Date().toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' }), W / 2, 980);
+
+    // Seal
+    c.beginPath(); c.arc(W - 270, H - 250, 90, 0, Math.PI * 2);
+    c.fillStyle = accent; c.fill();
+    c.beginPath(); c.arc(W - 270, H - 250, 72, 0, Math.PI * 2);
+    c.strokeStyle = '#0a0d13'; c.lineWidth = 4; c.stroke();
+    c.fillStyle = '#0a0d13';
+    c.font = '800 60px ' + fontFamily;
+    c.fillText(String(data.score), W - 270, H - 230);
+    return cv;
+  }
+
+  function downloadCertificate() {
+    if (!certData) return;
+    var input = $('cert-name');
+    var name = (input.value || '').replace(/\s+/g, ' ').trim().slice(0, 30) || 'Player';
+    saveName(name);
+    drawCertificate(name, certData).toBlob(function (blob) {
+      if (!blob) return;
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url;
+      a.download = 'NumberSnake-Certificate-' + RANKS[certData.rankIdx].name + '.png';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+    }, 'image/png');
+  }
+
   /* ---------- HUD and screens ---------- */
 
   function bump(el) {
@@ -449,6 +566,14 @@
     nextEl.textContent = state.nextNumber;
     bestEl.textContent = best;
     levelEl.textContent = levelFor(state.score, modeId);
+    var rIdx = rankIndexFor(state.score);
+    rankEl.textContent = RANKS[rIdx].name;
+    rankEl.style.color = RANKS[rIdx].color;
+    if (rIdx > curRankIdx && status === 'playing') {
+      bump(rankEl);
+      announce('Rank up! You are now ' + RANKS[rIdx].name + '.');
+    }
+    curRankIdx = rIdx;
     speedEl.textContent = (1000 / interval).toFixed(1) + ' moves/s';
     speedEl.classList.toggle('is-slowed', state.effects.freeze > 0);
   }
@@ -582,6 +707,14 @@
     $('final-score').textContent = state.score;
     $('final-best').textContent = best;
     $('over-mode').textContent = MODES[modeId].label + ' mode';
+    var endRank = rankIndexFor(state.score);
+    var rankLine = $('over-rank');
+    rankLine.textContent = 'Rank: ' + RANKS[endRank].name;
+    rankLine.style.color = RANKS[endRank].color;
+    var canCert = state.score >= CERT_MIN_SCORE;
+    $('cert-box').hidden = !canCert;
+    certData = canCert ? { score: state.score, rankIdx: endRank, mode: MODES[modeId].label } : null;
+    if (canCert) $('cert-name').value = loadName();
     $('new-record').hidden = !(state.score > 0 && state.score > bestAtStart);
 
     overLockUntil = performance.now() + OVER_LOCK;
@@ -1159,6 +1292,8 @@
 
   document.addEventListener('keydown', function (e) {
     if (e.ctrlKey || e.metaKey || e.altKey) return;
+    // Let the player type their name for the certificate.
+    if (e.target && e.target.tagName === 'INPUT') return;
 
     var dirName = KEY_DIRS[e.code];
     if (dirName) {
@@ -1212,6 +1347,7 @@
   bindButton($('btn-pause-menu'), toMenu);
   bindButton($('btn-again'), playAgain);
   bindButton($('btn-menu'), toMenu);
+  bindButton($('btn-cert'), downloadCertificate);
   bindButton(pauseBtn, togglePause);
   bindButton(restartBtn, function () { if (status !== 'start') startGame(); });
 

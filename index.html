@@ -43,6 +43,7 @@
       <div class="stat">
         <span class="stat-label">Score</span>
         <span class="stat-value" id="score">0</span>
+        <span class="stat-sub rank-sub" id="rank">Rookie</span>
       </div>
       <div class="stat stat-next">
         <span class="stat-label"><span class="lbl-short">Next</span><span class="lbl-full">Next number</span></span>
@@ -132,6 +133,11 @@
             </div>
           </div>
           <p class="badge" id="new-record" hidden>New highest score!</p>
+          <p class="rank-line" id="over-rank"></p>
+          <div class="cert-box" id="cert-box" hidden>
+            <input type="text" id="cert-name" class="cert-input" maxlength="30" placeholder="Your name" autocomplete="name" aria-label="Name for certificate">
+            <button type="button" id="btn-cert" class="btn btn-gold">Download Certificate</button>
+          </div>
           <div class="overlay-actions">
             <button type="button" id="btn-again" class="btn btn-primary">Play Again</button>
             <button type="button" id="btn-menu" class="btn btn-ghost">Change mode</button>
