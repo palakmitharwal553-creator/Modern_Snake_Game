@@ -822,3 +822,135 @@ body {
 .btn-small { min-height: 36px; font-size: 0.85rem; padding: 0 14px; }
 
 .cert-btns { display: flex; flex-direction: column; gap: 8px; width: 100%; }
+
+/* ================= Flashy 3D theme ================= */
+
+body {
+  background:
+    radial-gradient(700px 420px at 12% -5%, rgba(167, 139, 250, 0.28), transparent 70%),
+    radial-gradient(700px 480px at 92% 8%, rgba(255, 46, 62, 0.20), transparent 70%),
+    radial-gradient(900px 600px at 50% 115%, rgba(53, 224, 255, 0.16), transparent 70%),
+    linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px) 0 0 / 38px 38px,
+    linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px) 0 0 / 38px 38px,
+    var(--bg);
+  background-attachment: fixed;
+}
+
+.brand {
+  background: linear-gradient(90deg, #fff, #ffb703 40%, #ff2e3e 75%, #a78bfa);
+  background-size: 200% 100%;
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent; color: transparent;
+  filter: drop-shadow(0 2px 10px rgba(255, 46, 62, 0.45));
+  animation: shine 6s linear infinite;
+}
+@keyframes shine { to { background-position: 200% 0; } }
+
+/* 3D push buttons */
+.btn { transition: transform 0.08s ease, box-shadow 0.08s ease, filter 0.15s ease; }
+.btn-primary {
+  background: linear-gradient(180deg, #ff5a68, var(--red-btn) 55%, var(--red-deep));
+  border: 1px solid #ff8a94;
+  box-shadow: 0 5px 0 #7d0a15, 0 10px 22px rgba(255, 46, 62, 0.45), inset 0 1px 0 rgba(255,255,255,0.45);
+  text-shadow: 0 1px 0 rgba(0,0,0,0.35);
+}
+.btn-primary:hover:not(:disabled) { filter: brightness(1.1); transform: translateY(-1px); }
+.btn-primary:active:not(:disabled) { transform: translateY(4px); box-shadow: 0 1px 0 #7d0a15, 0 4px 10px rgba(255,46,62,0.4), inset 0 1px 0 rgba(255,255,255,0.3); }
+.btn-ghost {
+  background: linear-gradient(180deg, #1b2438, #121927);
+  border: 1px solid #33425f;
+  box-shadow: 0 4px 0 #0a0e16, inset 0 1px 0 rgba(255,255,255,0.1);
+}
+.btn-ghost:active:not(:disabled) { transform: translateY(3px); box-shadow: 0 1px 0 #0a0e16; }
+.btn-gold { box-shadow: 0 5px 0 #8a5a00, 0 10px 22px rgba(255,183,3,0.4), inset 0 1px 0 rgba(255,255,255,0.6); }
+.btn-gold:active { transform: translateY(4px); box-shadow: 0 1px 0 #8a5a00; }
+
+/* Glossy 3D board frame */
+.board {
+  border: 3px solid #3b4d73;
+  border-radius: 22px;
+  box-shadow:
+    0 0 0 3px #0a0e16, 0 0 0 5px #2a3a5a,
+    0 10px 0 #0a0e16, 0 12px 0 #1c2740,
+    0 34px 70px rgba(0,0,0,0.65),
+    0 0 60px rgba(167, 139, 250, 0.22),
+    inset 0 0 40px rgba(0,0,0,0.5);
+}
+.board::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 4;
+  border-radius: 19px;
+  background: linear-gradient(160deg, rgba(255,255,255,0.10), transparent 28%);
+}
+
+/* 3D glass stat cards */
+.stat {
+  position: relative;
+  background: linear-gradient(160deg, rgba(36, 48, 74, 0.95), rgba(14, 20, 32, 0.95));
+  border: 1px solid #34456a;
+  border-radius: 18px;
+  box-shadow: 0 6px 0 #0a0e16, 0 14px 26px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.14);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.stat:hover { transform: translateY(-3px); box-shadow: 0 9px 0 #0a0e16, 0 20px 34px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.2); }
+.stat-label { text-transform: uppercase; letter-spacing: 0.1em; font-size: 0.72rem; }
+.stat-value {
+  background: linear-gradient(180deg, #fff, #9fb4d8);
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent; color: transparent;
+  filter: drop-shadow(0 2px 8px rgba(53, 224, 255, 0.35));
+}
+.rank-sub { font-size: 0.95rem; text-transform: uppercase; letter-spacing: 0.12em; text-shadow: 0 0 12px currentColor; }
+
+/* Overlays and start title */
+.overlay { background: radial-gradient(circle at 50% 30%, rgba(40, 30, 80, 0.75), rgba(8, 11, 17, 0.88)); }
+.overlay-title-big {
+  background: linear-gradient(180deg, #fff 10%, #ffb703 50%, #ff2e3e);
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent; color: transparent;
+  filter: drop-shadow(0 4px 0 rgba(0,0,0,0.5)) drop-shadow(0 0 18px rgba(255, 46, 62, 0.5));
+}
+.mode-btn {
+  background: linear-gradient(180deg, #1b2438, #111826);
+  box-shadow: 0 5px 0 #0a0e16, inset 0 1px 0 rgba(255,255,255,0.1);
+  transition: transform 0.1s ease, box-shadow 0.1s ease;
+}
+.mode-btn[aria-checked="true"] { box-shadow: 0 5px 0 #7d0a15, 0 0 24px rgba(255,46,62,0.45), inset 0 1px 0 rgba(255,255,255,0.2); transform: translateY(-2px); }
+.final-item { background: linear-gradient(160deg, #1d2740, #101726); box-shadow: 0 5px 0 #0a0e16, inset 0 1px 0 rgba(255,255,255,0.12); }
+
+/* Rules panel */
+.rules {
+  background: linear-gradient(160deg, rgba(26, 36, 58, 0.95), rgba(12, 17, 28, 0.95));
+  border: 1px solid #34456a;
+  border-radius: 22px;
+  padding: 20px 24px;
+  box-shadow: 0 8px 0 #0a0e16, 0 20px 40px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.12);
+}
+.rules h2 { font-size: 1.5rem; text-transform: uppercase; letter-spacing: 0.1em; color: #ffd23f; text-shadow: 0 0 16px rgba(255, 183, 3, 0.5); }
+.rules-sub { color: var(--cyan); text-transform: uppercase; letter-spacing: 0.08em; text-shadow: 0 0 12px rgba(53, 224, 255, 0.45); }
+.rules-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px 32px; }
+.rules-col .rules-sub:first-child { margin-top: 0; }
+.prog-item { background: linear-gradient(160deg, #1d2740, #101726); box-shadow: 0 4px 0 #0a0e16, inset 0 1px 0 rgba(255,255,255,0.1); }
+
+/* Balanced desktop layout: board + tall stats, rules full width below */
+@media (min-width: 900px) {
+  .app {
+    max-width: 1120px;
+    grid-template-columns: minmax(0, 1fr) 280px;
+    grid-template-areas:
+      "top   top"
+      "stage stats"
+      "rules rules";
+    grid-template-rows: auto auto auto;
+  }
+  .stage { align-items: center; }
+  .stats { grid-template-columns: minmax(0, 1fr); grid-template-rows: repeat(4, 1fr); align-self: stretch; gap: 16px; }
+  .stat { align-items: center; text-align: center; }
+  .stat-value { font-size: 2.6rem; }
+  .next-tile { align-self: center; font-size: 2rem; }
+  .rules-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+@media (max-width: 899px) {
+  .rank-sub { font-size: 0.68rem; letter-spacing: 0.04em; }
+  .stat { padding: 8px 8px; }
+}
