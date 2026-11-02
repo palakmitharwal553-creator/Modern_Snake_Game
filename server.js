@@ -9,6 +9,7 @@
 require('dotenv').config();
 
 const express = require('express');
+const cors = require('cors');
 const path = require('path');
 
 const { connect, close, isAtlasConnected } = require('./db/mongo');
@@ -23,7 +24,11 @@ const PORT = parseInt(process.env.PORT || '3000', 10);
 if (process.env.TRUST_PROXY) app.set('trust proxy', 1);   // set when running behind a proxy (Render, Nginx...)
 app.disable('x-powered-by');
 
+app.use(cors());   // lets the mobile app (different origin) call the API
 app.use(express.json({ limit: '8kb' }));
+
+// Open /api/health to check where data is really being stored ("atlas" = permanent, "local" = temporary file)
+app.get('/api/health', (req, res) => res.json({ ok: true, dbMode: isAtlasConnected() ? 'atlas' : 'local' }));
 
 // Only these files are public. (Serving the whole folder would expose .env, server.js and data/db.json.)
 const PUBLIC_FILES = { '/': 'index.html', '/index.html': 'index.html', '/style.css': 'style.css', '/script.js': 'script.js' };

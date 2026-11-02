@@ -236,6 +236,10 @@ async function ensureIndexes(database) {
 // ---------------------------------------------------------------------------
 // Connection
 // ---------------------------------------------------------------------------
+function mustUseAtlas() {
+  return process.env.NODE_ENV === 'production' || process.env.REQUIRE_ATLAS === '1';
+}
+
 async function connect() {
   const uri = process.env.MONGODB_URI;
   const isPlaceholder = !uri || uri.includes('<username>') || uri.includes('<password>');
@@ -252,6 +256,7 @@ async function connect() {
       console.log('[mongo] Connected to MongoDB Atlas (number_snake_db). Indexes verified.');
       return;
     } catch (err) {
+      if (mustUseAtlas()) throw new Error('Atlas connection failed: ' + err.message);
       console.warn('[mongo] Could not use Atlas (' + err.message + '). Falling back to persistent local storage.');
       _isAtlas = false;
       _db = null;
@@ -259,6 +264,7 @@ async function connect() {
       _client = null;
     }
   } else {
+    if (mustUseAtlas()) throw new Error('MONGODB_URI is not set. Refusing to use temporary local storage.');
     console.log('[mongo] Placeholder MONGODB_URI detected. Using persistent local storage (data/db.json).');
     console.log('[mongo] To connect to MongoDB Atlas, put your real credentials in .env.');
   }

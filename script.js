@@ -1617,14 +1617,20 @@ function getNickname() {
 /* ---------- Api ---------- */
 
 var Api = (function () {
+  var API_BASE = String(window.NS_API_BASE || '').replace(/\/+$/, '');   // '' on the website, full backend URL in the app
+
   function request(method, path, body) {
-    var opts = { method: method, headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin' };
+    var opts = { method: method, headers: { 'Content-Type': 'application/json' } };
     if (body !== undefined) opts.body = JSON.stringify(body);
-    return fetch(path, opts).then(function (r) {
+    var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+    var timer = null;
+    if (ctrl) { opts.signal = ctrl.signal; timer = setTimeout(function () { ctrl.abort(); }, 10000); }
+    return fetch(API_BASE + path, opts).then(function (r) {
+      if (timer) clearTimeout(timer);
       return r.json().catch(function () { return {}; }).then(function (data) {
         return { status: r.status, data: data || {} };
       });
-    });
+    }, function (e) { if (timer) clearTimeout(timer); throw e; });
   }
   function saveName(name) {
     return request('POST', '/api/player', { playerId: getPlayerId(), name: name }).catch(function () {});
@@ -1841,7 +1847,7 @@ window.NSLeaderboard = (function () {
       return Array.isArray(a) ? a : [];
     } catch (e) { return []; }
   }
-  function writePending(a) { sSet(PENDING_KEY, JSON.stringify(a.slice(-20))); }
+  function writePending(a) { sSet(PENDING_KEY, JSON.stringify(a.slice(-100))); }
 
   // Resolves { done: true, res } or { done: false } (should be retried later).
   function send(payload) {
@@ -2083,6 +2089,9 @@ window.NSLeaderboard = (function () {
   else Api.saveName(getNickname());     // makes sure the server knows this device's name
   switchTab('normal');
   flushPending();
+  window.addEventListener('online', flushPending);
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) flushPending(); });
+  setInterval(flushPending, 30000);
 
   return {
     submit: submit,
