@@ -1,0 +1,16 @@
+# Environment variables — never commit these
+.env
+
+# Node dependencies
+node_modules/
+
+# Local fallback database
+data/
+
+# ZIP archives
+*.zip
+
+# OS / editor artifacts
+.DS_Store
+Thumbs.db
+*.log

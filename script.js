@@ -632,6 +632,8 @@
       progress.certs += 1;
       saveProgress();
       renderProgress();
+      // --- Backend: fire-and-forget cert record (authenticated users only) ---
+      if (typeof window !== 'undefined' && window.Api) window.Api.saveCert({ rankIdx: rankIdx, rankName: RANKS[rankIdx].name, score: certData.score, mode: certData.mode, playerName: name });
       setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
     }, 'image/png');
   }
@@ -818,6 +820,14 @@
       });
     }
     $('new-record').hidden = !(state.score > 0 && state.score > bestAtStart);
+
+    // --- Backend: fire-and-forget run record (authenticated users only) ---
+    if (typeof window !== 'undefined' && window.Api) window.Api.saveRun({ score: state.score, mode: modeId, rankIdx: endRank, rankName: RANKS[endRank].name, reason: reason });
+
+    // --- Leaderboard: submit score and refresh rankings ---
+    if (typeof window !== 'undefined' && window.NSLeaderboard && typeof window.NSLeaderboard.submit === 'function') {
+      window.NSLeaderboard.submit(modeId);
+    }
 
     overLockUntil = performance.now() + OVER_LOCK;
     if (reason === 'bomb') {
@@ -1519,7 +1529,9 @@
         cols: COLS,
         rows: ROWS
       };
-    }
+    },
+    RANKS: RANKS,
+    rankIndexFor: rankIndexFor
   };
 
   applyModeToUi();
@@ -1529,3 +1541,546 @@
   window.requestAnimationFrame(frame);
 
 })(typeof window !== 'undefined' ? window : globalThis);
+
+/* =========================================================================
+   Backend API module — added for Node/Express/MongoDB integration.
+   All calls are fire-and-forget: they never block the game loop.
+   The game works identically without a backend (e.g. offline, guest mode).
+   ========================================================================= */
+
+if (typeof document !== 'undefined') { (function () {
+'use strict';
+
+// ---------------------------------------------------------------------------
+// Api — thin fetch wrapper. saveRun / saveCert are fire-and-forget.
+// ---------------------------------------------------------------------------
+var Api = (function () {
+
+  function post(path, body) {
+    return fetch(path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify(body)
+    }).then(function (r) { return r.json(); });
+  }
+
+  function get(path) {
+    return fetch(path, { credentials: 'same-origin' })
+      .then(function (r) { return r.json(); });
+  }
+
+  // These two are called from inside the main IIFE (endGame / downloadCertificate).
+  // They bail out silently when the user is not logged in or the network is down.
+  function saveRun(data) {
+    if (!window._nsLoggedIn) return;
+    post('/api/runs', data).catch(function () {});
+  }
+
+  function saveCert(data) {
+    if (!window._nsLoggedIn) return;
+    post('/api/certs', data).catch(function () {});
+  }
+
+  return { post: post, get: get, saveRun: saveRun, saveCert: saveCert };
+}());
+
+// Expose Api so the main IIFE's Api.saveRun / Api.saveCert calls resolve.
+window.Api = Api;
+
+// ---------------------------------------------------------------------------
+// AuthUI — modal, login/register/logout, session restore.
+// ---------------------------------------------------------------------------
+(function () {
+
+  var _user = null;
+
+  // DOM references
+  var authBar       = document.getElementById('auth-bar');
+  var authStatus    = document.getElementById('auth-status');
+  var authUsername  = document.getElementById('auth-username');
+  var btnLogout     = document.getElementById('btn-logout');
+  var btnOpenAuth   = document.getElementById('btn-open-auth');
+  var backdrop      = document.getElementById('auth-backdrop');
+  var btnClose      = document.getElementById('btn-close-auth');
+  var btnGuest      = document.getElementById('btn-continue-guest');
+  var modalTitle    = document.getElementById('auth-modal-title');
+  var tabLogin      = document.getElementById('tab-login');
+  var tabRegister   = document.getElementById('tab-register');
+  var panelLogin    = document.getElementById('panel-login');
+  var panelRegister = document.getElementById('panel-register');
+  var formLogin     = document.getElementById('form-login');
+  var loginEmail    = document.getElementById('login-email');
+  var loginPass     = document.getElementById('login-password');
+  var loginMsg      = document.getElementById('login-msg');
+  var formReg       = document.getElementById('form-register');
+  var regUsername   = document.getElementById('reg-username');
+  var regEmail      = document.getElementById('reg-email');
+  var regPass       = document.getElementById('reg-password');
+  var regMsg        = document.getElementById('reg-msg');
+
+  // ---- State ----
+
+  function setUser(user) {
+    _user = user;
+    window._nsLoggedIn = !!user;
+    if (user) {
+      authStatus.hidden = false;
+      authUsername.textContent = user.username;
+      btnLogout.hidden = false;
+      btnOpenAuth.hidden = true;
+      // Sync server best scores to localStorage if they are higher
+      try {
+        ['normal', 'nowalls'].forEach(function (m) {
+          var key = m === 'normal' ? 'numberSnake.highScore' : 'numberSnake.highScore.nowalls';
+          var serverBest = (user.bestScores && user.bestScores[m]) || 0;
+          var localBest  = parseInt(window.localStorage.getItem(key) || '0', 10) || 0;
+          if (serverBest > localBest) window.localStorage.setItem(key, String(serverBest));
+        });
+      } catch (e) {}
+    } else {
+      authStatus.hidden = true;
+      authUsername.textContent = '';
+      btnLogout.hidden = true;
+      btnOpenAuth.hidden = false;
+    }
+  }
+
+  // ---- Modal ----
+
+  function openModal() {
+    backdrop.hidden = false;
+    showTab('login');
+    loginMsg.textContent = '';
+    regMsg.textContent = '';
+  }
+
+  function closeModal() { backdrop.hidden = true; }
+
+  function showTab(tab) {
+    var isLogin = tab === 'login';
+    tabLogin.setAttribute('aria-selected', isLogin ? 'true' : 'false');
+    tabLogin.classList.toggle('auth-tab-active', isLogin);
+    tabRegister.setAttribute('aria-selected', isLogin ? 'false' : 'true');
+    tabRegister.classList.toggle('auth-tab-active', !isLogin);
+    panelLogin.hidden    = !isLogin;
+    panelRegister.hidden = isLogin;
+    modalTitle.textContent = isLogin ? 'Sign in' : 'Create account';
+  }
+
+  function setMsg(el, text, ok) {
+    el.textContent = text;
+    el.className   = 'auth-msg' + (ok ? ' success' : '');
+  }
+
+  // ---- Bindings ----
+
+  btnOpenAuth.addEventListener('click', openModal);
+  btnClose.addEventListener('click', closeModal);
+  btnGuest.addEventListener('click', closeModal);
+  tabLogin.addEventListener('click', function () { showTab('login'); });
+  tabRegister.addEventListener('click', function () { showTab('register'); });
+  backdrop.addEventListener('click', function (e) { if (e.target === backdrop) closeModal(); });
+  document.addEventListener('keydown', function (e) {
+    if (e.code === 'Escape' && !backdrop.hidden) closeModal();
+  });
+
+  formLogin.addEventListener('submit', function (e) {
+    e.preventDefault();
+    setMsg(loginMsg, 'Signing in\u2026', false);
+    Api.post('/api/login', { email: loginEmail.value, password: loginPass.value })
+      .then(function (data) {
+        if (data.error) { setMsg(loginMsg, data.error, false); return; }
+        setUser(data.user);
+        setMsg(loginMsg, 'Welcome back, ' + data.user.username + '!', true);
+        formLogin.reset();
+        setTimeout(closeModal, 900);
+      })
+      .catch(function () { setMsg(loginMsg, 'Network error. Please try again.', false); });
+  });
+
+  formReg.addEventListener('submit', function (e) {
+    e.preventDefault();
+    setMsg(regMsg, 'Creating account\u2026', false);
+    Api.post('/api/register', { username: regUsername.value, email: regEmail.value, password: regPass.value })
+      .then(function (data) {
+        if (data.error) { setMsg(regMsg, data.error, false); return; }
+        setUser(data.user);
+        setMsg(regMsg, 'Account created! Welcome, ' + data.user.username + '!', true);
+        formReg.reset();
+        setTimeout(closeModal, 900);
+      })
+      .catch(function () { setMsg(regMsg, 'Network error. Please try again.', false); });
+  });
+
+  btnLogout.addEventListener('click', function () {
+    Api.post('/api/logout', {})
+      .then(function () { setUser(null); })
+      .catch(function () { setUser(null); });
+  });
+
+  // ---- Boot: restore session if one already exists ----
+  Api.get('/api/me')
+    .then(function (data) { if (data && data.user) setUser(data.user); })
+    .catch(function () { /* backend unavailable — stay as guest */ });
+
+  // Make auth bar visible (it starts hidden via [hidden] attribute)
+  authBar.removeAttribute('hidden');
+
+}());
+
+// ---------------------------------------------------------------------------
+// NSLeaderboard — complete leaderboard controller and API client
+// ---------------------------------------------------------------------------
+window.NSLeaderboard = (function () {
+  var currentMode = 'all';
+  var lastSubmittedRunId = null;
+
+  var NICK_KEY = 'numberSnake.nickname';
+  var PLAYER_KEY = 'numberSnake.playerName';
+  var PID_KEY = 'numberSnake.playerId';
+
+  // DOM elements
+  var listEl = document.getElementById('lb-list');
+  var statusEl = document.getElementById('lb-status');
+  var myRankEl = document.getElementById('lb-my-rank');
+  var nickInput = document.getElementById('lb-nickname-input');
+  var btnSaveNick = document.getElementById('lb-btn-save-nick');
+  var btnRefresh = document.getElementById('lb-btn-refresh');
+  var btnShowLb = document.getElementById('btn-show-lb');
+
+  // Game over overlay submission elements
+  var overNickInput = document.getElementById('lb-over-nick');
+  var btnOverSubmit = document.getElementById('btn-over-submit-lb');
+  var overStatusEl = document.getElementById('lb-submit-status');
+
+  // Tabs
+  var tabs = {
+    all: document.getElementById('lb-tab-all'),
+    normal: document.getElementById('lb-tab-normal'),
+    nowalls: document.getElementById('lb-tab-nowalls')
+  };
+
+  function getPlayerId() {
+    try {
+      var id = window.localStorage.getItem(PID_KEY);
+      if (!id) {
+        id = 'p_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8);
+        window.localStorage.setItem(PID_KEY, id);
+      }
+      return id;
+    } catch (e) {
+      return 'p_' + Math.random().toString(36).slice(2, 8);
+    }
+  }
+
+  function getNickname() {
+    try {
+      return window.localStorage.getItem(NICK_KEY) ||
+             window.localStorage.getItem(PLAYER_KEY) ||
+             '';
+    } catch (e) {
+      return '';
+    }
+  }
+
+  function setNickname(name) {
+    var clean = (name || '').replace(/<[^>]*>/g, '').trim().slice(0, 25);
+    try {
+      if (clean) {
+        window.localStorage.setItem(NICK_KEY, clean);
+        window.localStorage.setItem(PLAYER_KEY, clean);
+      }
+    } catch (e) {}
+    syncNicknameInputs(clean);
+    return clean;
+  }
+
+  function syncNicknameInputs(name) {
+    var val = name || getNickname() || '';
+    if (nickInput && document.activeElement !== nickInput) nickInput.value = val;
+    if (overNickInput && document.activeElement !== overNickInput) overNickInput.value = val;
+    var certName = document.getElementById('cert-name');
+    if (certName && document.activeElement !== certName) certName.value = val;
+  }
+
+  function switchTab(mode) {
+    currentMode = mode;
+    Object.keys(tabs).forEach(function (k) {
+      var tab = tabs[k];
+      if (!tab) return;
+      var active = k === mode;
+      tab.classList.toggle('active', active);
+      tab.setAttribute('aria-selected', active ? 'true' : 'false');
+    });
+    load(mode);
+  }
+
+  function setOverStatus(text, type) {
+    if (!overStatusEl) return;
+    overStatusEl.textContent = text;
+    overStatusEl.className = 'lb-submit-status' + (type ? ' ' + type : '');
+  }
+
+  function submit(modeId) {
+    var st = window.NumberSnake ? window.NumberSnake.getState() : null;
+    if (!st) return Promise.resolve();
+
+    var score = typeof st.score === 'number' ? st.score : 0;
+    var mode = modeId || st.mode || 'normal';
+
+    // Prevent duplicate submission for identical game run
+    var runId = mode + '-' + score + '-' + Math.floor(Date.now() / 4000);
+    if (lastSubmittedRunId === runId) {
+      return Promise.resolve();
+    }
+    lastSubmittedRunId = runId;
+
+    var nick = (overNickInput && overNickInput.value.trim()) || getNickname() || 'Player';
+    setNickname(nick);
+
+    var ranksList = (window.NumberSnake && window.NumberSnake.RANKS) || [
+      { name: 'Rookie', min: 0 }, { name: 'Explorer', min: 10 },
+      { name: 'Skilled', min: 25 }, { name: 'Pro', min: 50 },
+      { name: 'Expert', min: 80 }, { name: 'Legend', min: 120 }
+    ];
+    var rIdx = (window.NumberSnake && typeof window.NumberSnake.rankIndexFor === 'function')
+      ? window.NumberSnake.rankIndexFor(score)
+      : (score >= 120 ? 5 : score >= 80 ? 4 : score >= 50 ? 3 : score >= 25 ? 2 : score >= 10 ? 1 : 0);
+    var rName = (ranksList[rIdx] && ranksList[rIdx].name) || 'Rookie';
+
+    var payload = {
+      playerId: getPlayerId(),
+      nickname: nick,
+      score: score,
+      mode: mode,
+      rankIdx: rIdx,
+      rankName: rName,
+      reason: st.status || 'over',
+      runToken: runId
+    };
+
+    setOverStatus('Submitting score to leaderboard\u2026', '');
+
+    return fetch('/api/leaderboard/submit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify(payload)
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (res) {
+        if (res.ok) {
+          var msg = res.rank ? ('Ranked #' + res.rank + ' on leaderboard!') : 'Score recorded!';
+          setOverStatus(msg, 'success');
+          refresh();
+        } else {
+          setOverStatus(res.error || 'Failed to submit score', 'error');
+        }
+        return res;
+      })
+      .catch(function () {
+        setOverStatus('Score saved locally (server offline)', '');
+      });
+  }
+
+  function load(mode) {
+    currentMode = mode || currentMode || 'all';
+    if (statusEl) {
+      statusEl.textContent = 'Loading rankings\u2026';
+      statusEl.hidden = false;
+    }
+    if (listEl) listEl.innerHTML = '';
+    if (myRankEl) myRankEl.hidden = true;
+
+    var pid = getPlayerId();
+    var url = '/api/leaderboard?mode=' + encodeURIComponent(currentMode) + '&playerId=' + encodeURIComponent(pid);
+
+    return fetch(url, { credentials: 'same-origin' })
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (statusEl) statusEl.hidden = true;
+        if (!data.ok || !data.entries || !data.entries.length) {
+          if (statusEl) {
+            statusEl.textContent = 'No scores recorded yet in this category. Play a game to claim #1!';
+            statusEl.hidden = false;
+          }
+          return;
+        }
+
+        renderList(data.entries, pid);
+
+        // If player has a score and is ranked outside top 10, show their rank card
+        if (data.myRank && data.myRank.rank > data.entries.length) {
+          renderMyRankCard(data.myRank);
+        }
+      })
+      .catch(function () {
+        if (statusEl) {
+          statusEl.textContent = 'Unable to reach leaderboard server. Showing local progress.';
+          statusEl.hidden = false;
+        }
+      });
+  }
+
+  function renderList(entries, myPid) {
+    if (!listEl) return;
+    listEl.innerHTML = '';
+
+    entries.forEach(function (e) {
+      var li = document.createElement('li');
+      li.className = 'lb-item' + (e.playerId === myPid ? ' is-me' : '');
+
+      // Rank circle
+      var rDiv = document.createElement('div');
+      rDiv.className = 'lb-rank' + (e.rank <= 3 ? ' lb-rank-' + e.rank : '');
+      rDiv.textContent = e.rank;
+
+      // Info
+      var infoDiv = document.createElement('div');
+      infoDiv.className = 'lb-info';
+
+      var nameSpan = document.createElement('span');
+      nameSpan.className = 'lb-name';
+      nameSpan.textContent = e.nickname || 'Player';
+      if (e.playerId === myPid) {
+        var meTag = document.createElement('small');
+        meTag.style.color = 'var(--cyan)';
+        meTag.style.marginLeft = '6px';
+        meTag.textContent = '(You)';
+        nameSpan.appendChild(meTag);
+      }
+
+      var metaDiv = document.createElement('div');
+      metaDiv.className = 'lb-meta';
+
+      var modeBadge = document.createElement('span');
+      modeBadge.className = 'lb-mode-badge';
+      modeBadge.textContent = e.mode === 'nowalls' ? 'No walls' : 'Normal';
+
+      var rankPill = document.createElement('span');
+      rankPill.className = 'lb-rank-pill';
+      rankPill.textContent = e.rankName || 'Rookie';
+      var ranksObj = (window.NumberSnake && window.NumberSnake.RANKS) || [];
+      if (typeof e.rankIdx === 'number' && ranksObj[e.rankIdx]) {
+        rankPill.style.color = ranksObj[e.rankIdx].color;
+      }
+
+      var dateSpan = document.createElement('span');
+      if (e.playedAt) {
+        var d = new Date(e.playedAt);
+        dateSpan.textContent = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+      }
+
+      metaDiv.appendChild(modeBadge);
+      metaDiv.appendChild(rankPill);
+      if (dateSpan.textContent) metaDiv.appendChild(dateSpan);
+
+      infoDiv.appendChild(nameSpan);
+      infoDiv.appendChild(metaDiv);
+
+      // Score
+      var scoreSpan = document.createElement('div');
+      scoreSpan.className = 'lb-score';
+      scoreSpan.textContent = e.score;
+
+      li.appendChild(rDiv);
+      li.appendChild(infoDiv);
+      li.appendChild(scoreSpan);
+
+      listEl.appendChild(li);
+    });
+  }
+
+  function renderMyRankCard(my) {
+    if (!myRankEl) return;
+    myRankEl.hidden = false;
+    myRankEl.innerHTML = '';
+
+    var leftDiv = document.createElement('div');
+    leftDiv.className = 'lb-mine-left';
+
+    var badge = document.createElement('span');
+    badge.className = 'lb-mine-badge';
+    badge.textContent = 'YOUR RANK #' + my.rank;
+
+    var text = document.createElement('span');
+    text.className = 'lb-mine-text';
+    text.textContent = (my.nickname || 'You') + ' \u00b7 ' + (my.mode === 'nowalls' ? 'No walls' : 'Normal');
+
+    leftDiv.appendChild(badge);
+    leftDiv.appendChild(text);
+
+    var score = document.createElement('div');
+    score.className = 'lb-mine-score';
+    score.textContent = my.score;
+
+    myRankEl.appendChild(leftDiv);
+    myRankEl.appendChild(score);
+  }
+
+  function refresh() {
+    return load(currentMode);
+  }
+
+  // ---- Bindings ----
+  if (tabs.all) tabs.all.addEventListener('click', function () { switchTab('all'); });
+  if (tabs.normal) tabs.normal.addEventListener('click', function () { switchTab('normal'); });
+  if (tabs.nowalls) tabs.nowalls.addEventListener('click', function () { switchTab('nowalls'); });
+
+  if (btnSaveNick && nickInput) {
+    btnSaveNick.addEventListener('click', function () {
+      var updated = setNickname(nickInput.value);
+      btnSaveNick.textContent = 'Saved!';
+      setTimeout(function () { btnSaveNick.textContent = 'Save'; }, 1200);
+      refresh();
+    });
+    nickInput.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        btnSaveNick.click();
+      }
+    });
+  }
+
+  if (btnOverSubmit) {
+    btnOverSubmit.addEventListener('click', function () {
+      if (overNickInput && overNickInput.value.trim()) {
+        setNickname(overNickInput.value.trim());
+      }
+      lastSubmittedRunId = null; // force submit
+      submit();
+    });
+  }
+
+  if (btnRefresh) {
+    btnRefresh.addEventListener('click', function () {
+      btnRefresh.textContent = 'Refreshing\u2026';
+      refresh().finally(function () {
+        setTimeout(function () { btnRefresh.textContent = 'Refresh Leaderboard'; }, 600);
+      });
+    });
+  }
+
+  if (btnShowLb) {
+    btnShowLb.addEventListener('click', function () {
+      var el = document.getElementById('leaderboard');
+      if (el) el.scrollIntoView({ behavior: 'smooth' });
+    });
+  }
+
+  // Initialize
+  syncNicknameInputs();
+  load('all');
+
+  return {
+    submit: submit,
+    load: load,
+    refresh: refresh,
+    getNickname: getNickname,
+    setNickname: setNickname,
+    getPlayerId: getPlayerId
+  };
+})();
+
+}()); } // end browser guard

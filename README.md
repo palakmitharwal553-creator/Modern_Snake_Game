@@ -1,127 +1,157 @@
-# NUMBER SNAKE
+# NUMBER SNAKE — Full-Stack Edition
 
-A modern take on Snake. The snake is red, and instead of a plain food ball you eat **numbers in order**: 1, then 2, then 3, and so on. Built with plain HTML, CSS and vanilla JavaScript. No libraries, no build step, no backend.
+A modern take on Snake featuring numbered food tiles collected in sequential order (1, 2, 3...), dynamic power-ups, milestone certificates, account authentication, and a real-time global leaderboard powered by Node.js, Express, and MongoDB Atlas.
 
-## How to run
+---
 
-**Option 1 (simplest):** unzip the folder and double-click `index.html`. It opens in your default browser and works offline.
+## Features
 
-**Option 2 (local server, optional):** from inside the project folder run one of these, then open the printed address:
+- **Pure JavaScript Game Engine**: 24x24 grid, 4-way turn buffering, collision detection, and canvas particle system.
+- **Two Game Modes**:
+  - **Normal**: Deadly walls, +1 growth per food tile, Plus power-up (wall immunity).
+  - **No Walls**: Screen wrapping, +2 growth per food tile, faster speed scaling.
+- **Power-Ups & Hazards**:
+  - **Stopwatch**: Slows speed for 35 seconds.
+  - **Shield / Plus**: Wall pass-through immunity for 12 seconds.
+  - **Bomb**: Deadly obstacle that blinks and vanishes after 9 seconds.
+- **Rank System & Canvas Certificates**:
+  - Ranks: Rookie (0), Explorer (10), Skilled (25), Pro (50), Expert (80), Legend (120).
+  - Generates downloadable high-resolution 1600x1130 PNG achievement certificates.
+- **Global Leaderboard**:
+  - Tabs: **All Modes**, **Normal**, **No Walls**.
+  - Consistent ranking: higher score ranks higher, earlier achievement date is tiebreaker.
+  - Dedicated personal rank badge (`.lb-mine`) showing player rank even if outside the top 10.
+  - Nickname system with server-side sanitization.
+  - Seamless automatic submission via `window.NSLeaderboard.submit(modeId)`.
+- **Guest & Authenticated User Support**:
+  - Guests can play immediately with full local storage persistence and nickname submission.
+  - Registered players can sign up with email and securely persist scores and certificates in MongoDB Atlas.
+- **Database & Resilience**:
+  - Primary database: **MongoDB Atlas** (`number_snake_db`).
+  - Automatic fallback to persistent local JSON database (`data/db.json`) when offline or before Atlas credentials are configured.
 
-```
-python3 -m http.server 8000     # then visit http://localhost:8000
-npx serve .                     # if you have Node.js
-```
+---
 
-Any current version of Chrome, Edge, Firefox or Safari works.
-
-## How to play
-
-1. Pick a **mode** on the start screen, then press **Play Game**.
-2. Eat the numbers in order. The first number is **1**, then **2**, **3**, **4**, and so on. The "Next number" card always shows which one to collect.
-3. Each number you eat adds **1 to your score** and grows your snake, and the next number appears in a new free spot.
-4. The game speeds up as your score climbs, up to a playable limit.
-5. Hitting your **own body** ends the game, and so does eating a **bomb**. In Normal mode a **wall** does too.
-
-### Game modes
-
-| | Normal | No walls |
-| --- | --- | --- |
-| Edges | Deadly | Wrap around: the head re-enters from the opposite side |
-| Level up every | 5 points | 3 points |
-| Speed at level 1 | 150 ms per move (6.7 moves/s) | 140 ms per move (7.1 moves/s) |
-| Fastest speed | 70 ms (14.3 moves/s) | 60 ms (16.7 moves/s) |
-| Growth per number | 1 segment | 2 segments |
-| Plus power-up | Yes | No (walls are harmless anyway) |
-
-The speed ramps up sooner and the snake gets long quickly in No walls mode, so it is easy to grow but harder to stay in control. Each mode keeps its **own highest score**, and the game remembers the mode you chose last. On the start screen, left / right (or **1** / **2**) switches mode. Use **Change mode** on the pause or game over screen to go back to the start screen.
-
-### Power-ups
-
-Power-ups and bombs appear at random every 5 to 9 seconds and vanish after a while (they blink for the last 3 seconds). Their timers only run while the game is running, so pausing stops everything.
-
-| Icon | Name | Effect |
-| --- | --- | --- |
-| Gold stopwatch | Slow-down | Holds the game at level 1 or 2 speed for **35 seconds**, even while your score keeps climbing. Scoring and growth work as normal. When it ends, the speed jumps back to the level you have earned. |
-| Green plus | Wall immunity | For **12 seconds** walls cannot hurt you: you pass through and come out on the opposite side. The board edge turns green and dashed while it is active, and it flickers in the last seconds. Normal mode only. |
-| Black bomb | Bomb | Eating it ends the game. Bombs never appear before score 3, never closer than 4 cells to your head, and there are at most 2 at a time. |
-
-Active power-ups show as small timer chips in the top-left corner of the board.
-
-### Ranks and certificate
-
-Your rank depends on your score in the current run and is shown under the score. A short animation plays when you reach a new rank.
-
-| Rank | Score |
-| --- | --- |
-| Rookie | 0 - 9 |
-| Explorer | 10 - 24 |
-| Skilled | 25 - 49 |
-| Pro | 50 - 79 |
-| Expert | 80 - 119 |
-| Legend | 120 and above |
-
-You earn a certificate at **50 (Pro)**, **80 (Expert)** and **120 (Legend)** points. On the game over screen enter your name and download one PNG certificate for every milestone you reached in that run. Each certificate shows your name, the milestone, mode, rank, your run score and the date. Your name is remembered in the browser.
-
-The snake starts with **2 blocks** on a **24 x 24** board.
-
-### Your progress
-
-Under "How to play" there is a **Your progress** panel. It shows games played, your highest rank, your best score in each mode, how many certificates you downloaded, and your last 8 runs (score, rank, mode, date). Everything is saved in the browser (`localStorage`, key `numberSnake.progress`). The **Reset progress** button clears the progress and the saved high scores.
-
-### Controls
-
-| Action | Keyboard | Touch |
-| --- | --- | --- |
-| Steer | Arrow keys or W A S D | Swipe on the board, or use the on-screen arrow pad |
-| Choose mode (start screen) | Left / Right, or 1 / 2 | Tap a mode |
-| Pause / Resume | Space, P or Esc | Pause / Resume buttons |
-| Restart | Restart button | Restart button |
-| Play / Play Again | Enter (or the buttons) | Buttons |
-
-The snake cannot turn straight back into itself. Up to **four** quick turns are buffered, so fast key presses never skip a turn or cause a glitch, and the snake's eyes turn towards your next buffered turn straight away. The page does not scroll while you play, and the game pauses automatically if you switch to another tab.
-
-Your **highest scores** are saved in your browser (`localStorage`) and survive a refresh. To reset them, clear the site data for the page, or run `localStorage.removeItem('numberSnake.highScore')` (Normal) and `localStorage.removeItem('numberSnake.highScore.nowalls')` (No walls) in the browser console.
-
-## Project structure
+## Project Structure
 
 ```
 number-snake/
-  index.html   page structure: header, stats, board and screens (start, pause, game over), touch pad, rules
-  style.css    dark gaming theme, responsive layout, animations
-  script.js    game logic (pure functions) + canvas rendering, input and screens
-  README.md    this file
+├── index.html          # Semantic HTML: board, HUD, start/pause/game-over overlays, leaderboard, auth
+├── style.css           # 3D dark gaming theme, responsive CSS grid, animations, .lb classes
+├── script.js           # Part 1: Pure game logic (Node-testable); Part 2: Canvas renderer + NSLeaderboard
+├── server.js           # Express app: API routes, static serving, session management
+├── package.json        # Dependencies (Express, MongoDB driver, bcryptjs, express-session, connect-mongo)
+├── .env.example        # Environment variable template
+├── .env                # Local environment secrets (ignored by git)
+├── .gitignore          # Git ignore rules (.env, node_modules, data/db.json)
+├── db/
+│   └── mongo.js        # MongoDB Atlas connection manager with resilient offline fallback
+├── routes/
+│   ├── auth.js         # Authentication API: register, login, logout, me
+│   ├── leaderboard.js  # Leaderboard API: submit score, fetch rankings, mode filters
+│   ├── runs.js         # Game runs API
+│   └── certs.js        # Certificate milestone recording API
+└── test/
+    └── verify.js       # Automated test suite (14 end-to-end tests)
 ```
 
-No `assets/` folder is needed: everything is drawn with CSS and canvas.
+---
 
-## Customising
+## Environment Configuration
 
-Open `script.js` and edit the constants at the top.
+Create a `.env` file in the root of the project (copy from `.env.example`):
 
-| Constant | Meaning | Default |
-| --- | --- | --- |
-| `COLS`, `ROWS` | Board size in cells | 24 x 24 |
-| `MAX_QUEUE` | Quick turns that can be buffered | 4 |
-| `MODES.<mode>.levelEvery` | Points needed per level | 5 (Normal), 3 (No walls) |
-| `MODES.<mode>.startInterval` | Milliseconds per move at level 1 | 150 / 140 |
-| `MODES.<mode>.intervalStep` | Milliseconds faster per level | 10 / 12 |
-| `MODES.<mode>.minInterval` | Fastest allowed move interval | 70 / 60 |
-| `MODES.<mode>.growth` | Segments gained per number | 1 / 2 |
-| `MODES.<mode>.freezeLevel` | Speed level the stopwatch holds the game at | 2 |
-| `FREEZE_MS`, `SHIELD_MS` | Stopwatch and plus durations | 35000, 12000 |
-| `ITEM_LIFE` | How long each item stays on the board | bomb 9 s, others 12 s |
-| `SPAWN_MIN`, `SPAWN_MAX` | Gap between spawns | 5000, 9000 |
-| `MAX_BOMBS`, `BOMB_MIN_SCORE`, `BOMB_SAFE_DIST` | Bomb limits | 2, 3, 4 |
-| `RANKS` | Rank names, minimum score and colour | Rookie to Legend |
-| `CERT_MIN_SCORE` | Score needed to unlock the certificate | 50 |
-| `WEIGHTS` | How likely each item type is | 3 / 3 / 3 |
+```env
+# MongoDB Atlas Connection URI
+MONGODB_URI=mongodb+srv://<username>:<password>@StudentHubCluster.mongodb.net/?retryWrites=true&w=majority&appName=StudentHubCluster
 
-Colours live in the `:root` block of `style.css` and in the `COLORS` object in `script.js`.
+# Secret string used to sign session cookies
+SESSION_SECRET=your_long_random_session_secret_string
 
-## Notes
+# Port to listen on (default 3000)
+PORT=3000
 
-- If you fill every cell of the board, you win (a very long run!).
-- The power-up logic (`advance`, `spawnItem`, `step`) lives in the pure-logic half of `script.js`, so it can be unit tested in Node without a browser.
-- `script.js` also exports its logic functions when loaded in Node.js (`require('./script.js')`), which is handy for unit tests.
-- In the browser console, `NumberSnake.getState()` returns a read-only snapshot of the current game (mode, score, snake cells, food, items on the board, active effects and so on) for debugging.
+# Environment mode ('development' or 'production')
+NODE_ENV=development
+```
+
+> **Security Note:** Never commit `.env` to Git. The `.gitignore` file is configured to exclude it.
+
+---
+
+## MongoDB Atlas Setup
+
+1. Log into your [MongoDB Atlas](https://cloud.mongodb.com/) account.
+2. Select your cluster: **StudentHubCluster**.
+3. Under **Database Access**, create a database user with read and write privileges.
+4. Under **Network Access**, ensure your current IP address (or `0.0.0.0/0` for universal development access) is whitelisted.
+5. Database name used by the application:
+   - **`number_snake_db`**
+6. Collections used:
+   - `users`: User profiles and hashed credentials with unique `email` index.
+   - `game_runs`: Complete log of completed games.
+   - `leaderboard`: Deduplicated highest scores per player per mode with `{ score: -1, playedAt: 1 }` index.
+   - `certificates`: Milestones achieved with unique compound index `{ userId: 1, rankIdx: 1 }`.
+   - `sessions`: Active user sessions managed automatically by `connect-mongo`.
+
+*Note: All collections and indexes are ensured automatically when the server connects.*
+
+---
+
+## How to Run
+
+### 1. Install Dependencies
+
+```powershell
+npm install
+```
+
+### 2. Configure `.env`
+
+Copy `.env.example` to `.env` and enter your credentials. If running offline or with placeholders, the server will automatically use local persistent JSON storage.
+
+### 3. Start the Server
+
+```powershell
+# Production / Normal start
+npm start
+
+# Development mode with auto-reload
+npm run dev
+```
+
+Open your browser to:
+**`http://localhost:3000`**
+
+---
+
+## API Endpoints
+
+### Leaderboard API
+- `GET /api/leaderboard?mode=all` — Retrieve top rankings (modes: `all`, `normal`, `nowalls`).
+- `GET /api/leaderboard?mode=normal&playerId=<id>` — Returns top entries and the specific player's rank.
+- `POST /api/leaderboard/submit` — Submit a completed game score.
+- `GET /api/leaderboard/player?playerId=<id>` — Returns player's personal records.
+- `GET /api/leaderboard/stats` — Global game statistics.
+
+### Authentication API
+- `POST /api/register` — Create a new account (`username`, `email`, `password`).
+- `POST /api/login` — Authenticate and start session (`email`, `password`).
+- `POST /api/logout` — End session.
+- `GET /api/me` — Retrieve active session user.
+
+### Runs & Certificates
+- `POST /api/runs` — Save run metadata.
+- `POST /api/certs` — Save certificate download milestone.
+
+---
+
+## Automated Testing
+
+Run the included verification suite:
+
+```powershell
+node test/verify.js
+```
+
+All 14 tests covering authentication, score submission, sanitization, mode separation, tie-breaking, and session management will be executed.
