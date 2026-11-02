@@ -632,7 +632,7 @@
       progress.certs += 1;
       saveProgress();
       renderProgress();
-      // --- Backend: fire-and-forget cert record (authenticated users only) ---
+      // --- Backend: fire-and-forget certificate record for this device ---
       if (typeof window !== 'undefined' && window.Api) window.Api.saveCert({ rankIdx: rankIdx, rankName: RANKS[rankIdx].name, score: certData.score, mode: certData.mode, playerName: name });
       setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
     }, 'image/png');
@@ -821,10 +821,7 @@
     }
     $('new-record').hidden = !(state.score > 0 && state.score > bestAtStart);
 
-    // --- Backend: fire-and-forget run record (authenticated users only) ---
-    if (typeof window !== 'undefined' && window.Api) window.Api.saveRun({ score: state.score, mode: modeId, rankIdx: endRank, rankName: RANKS[endRank].name, reason: reason });
-
-    // --- Leaderboard: submit score and refresh rankings ---
+    // --- Leaderboard: automatically submit this finished game (device-based, no login) ---
     if (typeof window !== 'undefined' && window.NSLeaderboard && typeof window.NSLeaderboard.submit === 'function') {
       window.NSLeaderboard.submit(modeId);
     }
@@ -1543,277 +1540,130 @@
 })(typeof window !== 'undefined' ? window : globalThis);
 
 /* =========================================================================
-   Backend API module — added for Node/Express/MongoDB integration.
-   All calls are fire-and-forget: they never block the game loop.
-   The game works identically without a backend (e.g. offline, guest mode).
+   Device identity and global leaderboard (browser side).
+   - No accounts: each browser gets a Device ID (crypto.randomUUID), kept in
+     localStorage as "numberSnakeDeviceId".
+   - First visit asks for a display name; later visits reuse the saved profile.
+   - Every finished game is submitted automatically. The server decides the
+     rank; nothing here is trusted for ranking.
+   - All calls are fire-and-forget for the game loop: the game keeps working
+     when the server is offline, and unsent games are retried later.
    ========================================================================= */
 
 if (typeof document !== 'undefined') { (function () {
 'use strict';
 
+var DEVICE_KEY = 'numberSnakeDeviceId';
+var NAME_KEY = 'numberSnake.playerName';        // also used by the certificate name field
+var LEGACY_PID_KEY = 'numberSnake.playerId';    // id used by the older anonymous leaderboard
+var PENDING_KEY = 'numberSnakePendingRuns';
+var MOVE_KEY = 'numberSnakeLastMovement';
+var UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+var MAX_PENDING = 20;
+
+function $(id) { return document.getElementById(id); }
+
+function store(key, value) {
+  try { window.localStorage.setItem(key, value); } catch (e) { /* storage unavailable */ }
+}
+function load(key) {
+  try { return window.localStorage.getItem(key); } catch (e) { return null; }
+}
+
+function uuid() {
+  if (window.crypto && typeof window.crypto.randomUUID === 'function') return window.crypto.randomUUID();
+  // Fallback for non-secure contexts: RFC 4122 version 4 from getRandomValues.
+  var b = new Uint8Array(16);
+  window.crypto.getRandomValues(b);
+  b[6] = (b[6] & 0x0f) | 0x40;
+  b[8] = (b[8] & 0x3f) | 0x80;
+  var h = Array.prototype.map.call(b, function (x) { return ('0' + x.toString(16)).slice(-2); }).join('');
+  return h.slice(0, 8) + '-' + h.slice(8, 12) + '-' + h.slice(12, 16) + '-' + h.slice(16, 20) + '-' + h.slice(20);
+}
+
+var memoryDeviceId = null;
+function getDeviceId() {
+  var id = load(DEVICE_KEY);
+  if (id && UUID_RE.test(id)) return id;
+  id = memoryDeviceId || uuid();
+  memoryDeviceId = id;
+  store(DEVICE_KEY, id);
+  return id;
+}
+
 // ---------------------------------------------------------------------------
-// Api — thin fetch wrapper. saveRun / saveCert are fire-and-forget.
+// Api: thin fetch wrapper that always sends the Device ID.
 // ---------------------------------------------------------------------------
 var Api = (function () {
-
-  function post(path, body) {
-    return fetch(path, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'same-origin',
-      body: JSON.stringify(body)
-    }).then(function (r) { return r.json(); });
+  function request(method, path, body) {
+    var opts = {
+      method: method,
+      headers: { 'Content-Type': 'application/json', 'X-Device-Id': getDeviceId() },
+      credentials: 'same-origin'
+    };
+    if (body) opts.body = JSON.stringify(body);
+    return fetch(path, opts).then(function (r) {
+      return r.json().catch(function () { return {}; }).then(function (data) {
+        data._status = r.status;
+        return data;
+      });
+    });
   }
+  function post(path, body) { return request('POST', path, body || {}); }
+  function put(path, body) { return request('PUT', path, body || {}); }
+  function get(path) { return request('GET', path); }
 
-  function get(path) {
-    return fetch(path, { credentials: 'same-origin' })
-      .then(function (r) { return r.json(); });
-  }
-
-  // These two are called from inside the main IIFE (endGame / downloadCertificate).
-  // They bail out silently when the user is not logged in or the network is down.
-  function saveRun(data) {
-    if (!window._nsLoggedIn) return;
-    post('/api/runs', data).catch(function () {});
-  }
-
+  // Called from downloadCertificate(): never blocks or throws.
   function saveCert(data) {
-    if (!window._nsLoggedIn) return;
-    post('/api/certs', data).catch(function () {});
+    var payload = {};
+    Object.keys(data || {}).forEach(function (k) { payload[k] = data[k]; });
+    payload.deviceId = getDeviceId();
+    post('/api/certs', payload).catch(function () {});
   }
-
-  return { post: post, get: get, saveRun: saveRun, saveCert: saveCert };
+  return { post: post, put: put, get: get, saveCert: saveCert };
 }());
-
-// Expose Api so the main IIFE's Api.saveRun / Api.saveCert calls resolve.
 window.Api = Api;
 
 // ---------------------------------------------------------------------------
-// AuthUI — modal, login/register/logout, session restore.
-// ---------------------------------------------------------------------------
-(function () {
-
-  var _user = null;
-
-  // DOM references
-  var authBar       = document.getElementById('auth-bar');
-  var authStatus    = document.getElementById('auth-status');
-  var authUsername  = document.getElementById('auth-username');
-  var btnLogout     = document.getElementById('btn-logout');
-  var btnOpenAuth   = document.getElementById('btn-open-auth');
-  var backdrop      = document.getElementById('auth-backdrop');
-  var btnClose      = document.getElementById('btn-close-auth');
-  var btnGuest      = document.getElementById('btn-continue-guest');
-  var modalTitle    = document.getElementById('auth-modal-title');
-  var tabLogin      = document.getElementById('tab-login');
-  var tabRegister   = document.getElementById('tab-register');
-  var panelLogin    = document.getElementById('panel-login');
-  var panelRegister = document.getElementById('panel-register');
-  var formLogin     = document.getElementById('form-login');
-  var loginEmail    = document.getElementById('login-email');
-  var loginPass     = document.getElementById('login-password');
-  var loginMsg      = document.getElementById('login-msg');
-  var formReg       = document.getElementById('form-register');
-  var regUsername   = document.getElementById('reg-username');
-  var regEmail      = document.getElementById('reg-email');
-  var regPass       = document.getElementById('reg-password');
-  var regMsg        = document.getElementById('reg-msg');
-
-  // ---- State ----
-
-  function setUser(user) {
-    _user = user;
-    window._nsLoggedIn = !!user;
-    if (user) {
-      authStatus.hidden = false;
-      authUsername.textContent = user.username;
-      btnLogout.hidden = false;
-      btnOpenAuth.hidden = true;
-      // Sync server best scores to localStorage if they are higher
-      try {
-        ['normal', 'nowalls'].forEach(function (m) {
-          var key = m === 'normal' ? 'numberSnake.highScore' : 'numberSnake.highScore.nowalls';
-          var serverBest = (user.bestScores && user.bestScores[m]) || 0;
-          var localBest  = parseInt(window.localStorage.getItem(key) || '0', 10) || 0;
-          if (serverBest > localBest) window.localStorage.setItem(key, String(serverBest));
-        });
-      } catch (e) {}
-    } else {
-      authStatus.hidden = true;
-      authUsername.textContent = '';
-      btnLogout.hidden = true;
-      btnOpenAuth.hidden = false;
-    }
-  }
-
-  // ---- Modal ----
-
-  function openModal() {
-    backdrop.hidden = false;
-    showTab('login');
-    loginMsg.textContent = '';
-    regMsg.textContent = '';
-  }
-
-  function closeModal() { backdrop.hidden = true; }
-
-  function showTab(tab) {
-    var isLogin = tab === 'login';
-    tabLogin.setAttribute('aria-selected', isLogin ? 'true' : 'false');
-    tabLogin.classList.toggle('auth-tab-active', isLogin);
-    tabRegister.setAttribute('aria-selected', isLogin ? 'false' : 'true');
-    tabRegister.classList.toggle('auth-tab-active', !isLogin);
-    panelLogin.hidden    = !isLogin;
-    panelRegister.hidden = isLogin;
-    modalTitle.textContent = isLogin ? 'Sign in' : 'Create account';
-  }
-
-  function setMsg(el, text, ok) {
-    el.textContent = text;
-    el.className   = 'auth-msg' + (ok ? ' success' : '');
-  }
-
-  // ---- Bindings ----
-
-  btnOpenAuth.addEventListener('click', openModal);
-  btnClose.addEventListener('click', closeModal);
-  btnGuest.addEventListener('click', closeModal);
-  tabLogin.addEventListener('click', function () { showTab('login'); });
-  tabRegister.addEventListener('click', function () { showTab('register'); });
-  backdrop.addEventListener('click', function (e) { if (e.target === backdrop) closeModal(); });
-  document.addEventListener('keydown', function (e) {
-    if (e.code === 'Escape' && !backdrop.hidden) closeModal();
-  });
-
-  formLogin.addEventListener('submit', function (e) {
-    e.preventDefault();
-    setMsg(loginMsg, 'Signing in\u2026', false);
-    Api.post('/api/login', { email: loginEmail.value, password: loginPass.value })
-      .then(function (data) {
-        if (data.error) { setMsg(loginMsg, data.error, false); return; }
-        setUser(data.user);
-        setMsg(loginMsg, 'Welcome back, ' + data.user.username + '!', true);
-        formLogin.reset();
-        setTimeout(closeModal, 900);
-      })
-      .catch(function () { setMsg(loginMsg, 'Network error. Please try again.', false); });
-  });
-
-  formReg.addEventListener('submit', function (e) {
-    e.preventDefault();
-    setMsg(regMsg, 'Creating account\u2026', false);
-    Api.post('/api/register', { username: regUsername.value, email: regEmail.value, password: regPass.value })
-      .then(function (data) {
-        if (data.error) { setMsg(regMsg, data.error, false); return; }
-        setUser(data.user);
-        setMsg(regMsg, 'Account created! Welcome, ' + data.user.username + '!', true);
-        formReg.reset();
-        setTimeout(closeModal, 900);
-      })
-      .catch(function () { setMsg(regMsg, 'Network error. Please try again.', false); });
-  });
-
-  btnLogout.addEventListener('click', function () {
-    Api.post('/api/logout', {})
-      .then(function () { setUser(null); })
-      .catch(function () { setUser(null); });
-  });
-
-  // ---- Boot: restore session if one already exists ----
-  Api.get('/api/me')
-    .then(function (data) { if (data && data.user) setUser(data.user); })
-    .catch(function () { /* backend unavailable — stay as guest */ });
-
-  // Make auth bar visible (it starts hidden via [hidden] attribute)
-  authBar.removeAttribute('hidden');
-
-}());
-
-// ---------------------------------------------------------------------------
-// NSLeaderboard — complete leaderboard controller and API client
+// Leaderboard + player dashboard
 // ---------------------------------------------------------------------------
 window.NSLeaderboard = (function () {
-  var currentMode = 'all';
-  var lastSubmittedRunId = null;
+  var player = null;          // latest profile from the server
+  var registered = false;
+  var lastRefresh = 0;
+  var modalMode = null;       // 'register' | 'edit' | null
 
-  var NICK_KEY = 'numberSnake.nickname';
-  var PLAYER_KEY = 'numberSnake.playerName';
-  var PID_KEY = 'numberSnake.playerId';
-
-  // DOM elements
-  var listEl = document.getElementById('lb-list');
-  var statusEl = document.getElementById('lb-status');
-  var myRankEl = document.getElementById('lb-my-rank');
-  var nickInput = document.getElementById('lb-nickname-input');
-  var btnSaveNick = document.getElementById('lb-btn-save-nick');
-  var btnRefresh = document.getElementById('lb-btn-refresh');
-  var btnShowLb = document.getElementById('btn-show-lb');
-
-  // Game over overlay submission elements
-  var overNickInput = document.getElementById('lb-over-nick');
-  var btnOverSubmit = document.getElementById('btn-over-submit-lb');
-  var overStatusEl = document.getElementById('lb-submit-status');
-
-  // Tabs
-  var tabs = {
-    all: document.getElementById('lb-tab-all'),
-    normal: document.getElementById('lb-tab-normal'),
-    nowalls: document.getElementById('lb-tab-nowalls')
+  // Leaderboard section
+  var listEl = $('lb-list');
+  var statusEl = $('lb-status');
+  var myRankEl = $('lb-my-rank');
+  var btnRefresh = $('lb-btn-refresh');
+  var btnShowLb = $('btn-show-lb');
+  // Game over box
+  var overStatusEl = $('lb-submit-status');
+  // Player dashboard
+  var pd = {
+    name: $('pd-name'), rank: $('pd-rank'), best: $('pd-best'), bestMode: $('pd-best-mode'),
+    latest: $('pd-latest'), games: $('pd-games'), move: $('pd-move'), edit: $('pd-edit-name')
   };
+  // Name modal
+  var backdrop = $('name-backdrop');
+  var modalTitle = $('name-modal-title');
+  var modalText = $('name-modal-text');
+  var nameForm = $('form-name');
+  var nameInput = $('name-input');
+  var nameMsg = $('name-msg');
+  var nameClose = $('btn-close-name');
 
-  function getPlayerId() {
-    try {
-      var id = window.localStorage.getItem(PID_KEY);
-      if (!id) {
-        id = 'p_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8);
-        window.localStorage.setItem(PID_KEY, id);
-      }
-      return id;
-    } catch (e) {
-      return 'p_' + Math.random().toString(36).slice(2, 8);
-    }
+  function modeLabel(m) { return m === 'nowalls' ? 'No walls' : m === 'normal' ? 'Normal' : '\u2014'; }
+  function fmtDate(v) {
+    if (!v) return '';
+    var d = new Date(v);
+    return isNaN(d.getTime()) ? '' : d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
   }
-
-  function getNickname() {
-    try {
-      return window.localStorage.getItem(NICK_KEY) ||
-             window.localStorage.getItem(PLAYER_KEY) ||
-             '';
-    } catch (e) {
-      return '';
-    }
-  }
-
-  function setNickname(name) {
-    var clean = (name || '').replace(/<[^>]*>/g, '').trim().slice(0, 25);
-    try {
-      if (clean) {
-        window.localStorage.setItem(NICK_KEY, clean);
-        window.localStorage.setItem(PLAYER_KEY, clean);
-      }
-    } catch (e) {}
-    syncNicknameInputs(clean);
-    return clean;
-  }
-
-  function syncNicknameInputs(name) {
-    var val = name || getNickname() || '';
-    if (nickInput && document.activeElement !== nickInput) nickInput.value = val;
-    if (overNickInput && document.activeElement !== overNickInput) overNickInput.value = val;
-    var certName = document.getElementById('cert-name');
-    if (certName && document.activeElement !== certName) certName.value = val;
-  }
-
-  function switchTab(mode) {
-    currentMode = mode;
-    Object.keys(tabs).forEach(function (k) {
-      var tab = tabs[k];
-      if (!tab) return;
-      var active = k === mode;
-      tab.classList.toggle('active', active);
-      tab.setAttribute('aria-selected', active ? 'true' : 'false');
-    });
-    load(mode);
+  function ranksList() { return (window.NumberSnake && window.NumberSnake.RANKS) || []; }
+  function rankIdxFor(score) {
+    return (window.NumberSnake && window.NumberSnake.rankIndexFor) ? window.NumberSnake.rankIndexFor(score) : 0;
   }
 
   function setOverStatus(text, type) {
@@ -1822,265 +1672,317 @@ window.NSLeaderboard = (function () {
     overStatusEl.className = 'lb-submit-status' + (type ? ' ' + type : '');
   }
 
-  function submit(modeId) {
-    var st = window.NumberSnake ? window.NumberSnake.getState() : null;
-    if (!st) return Promise.resolve();
-
-    var score = typeof st.score === 'number' ? st.score : 0;
-    var mode = modeId || st.mode || 'normal';
-
-    // Prevent duplicate submission for identical game run
-    var runId = mode + '-' + score + '-' + Math.floor(Date.now() / 4000);
-    if (lastSubmittedRunId === runId) {
-      return Promise.resolve();
+  // ---- movement text ----
+  function movementText(r) {
+    if (r.duplicate) return 'This game was already recorded.';
+    var n = r.change;
+    switch (r.movement) {
+      case 'entered': return 'You entered the leaderboard at #' + r.rank + ' of ' + r.totalPlayers + '!';
+      case 'up': return 'Moved up ' + n + (n === 1 ? ' place' : ' places') + ': #' + r.previousRank + ' \u2192 #' + r.rank;
+      case 'down': return 'Moved down ' + n + (n === 1 ? ' place' : ' places') + ': #' + r.previousRank + ' \u2192 #' + r.rank;
+      case 'same': return 'Rank unchanged: #' + r.rank;
+      default: return 'Score recorded. Score at least 1 point to enter the leaderboard.';
     }
-    lastSubmittedRunId = runId;
-
-    var nick = (overNickInput && overNickInput.value.trim()) || getNickname() || 'Player';
-    setNickname(nick);
-
-    var ranksList = (window.NumberSnake && window.NumberSnake.RANKS) || [
-      { name: 'Rookie', min: 0 }, { name: 'Explorer', min: 10 },
-      { name: 'Skilled', min: 25 }, { name: 'Pro', min: 50 },
-      { name: 'Expert', min: 80 }, { name: 'Legend', min: 120 }
-    ];
-    var rIdx = (window.NumberSnake && typeof window.NumberSnake.rankIndexFor === 'function')
-      ? window.NumberSnake.rankIndexFor(score)
-      : (score >= 120 ? 5 : score >= 80 ? 4 : score >= 50 ? 3 : score >= 25 ? 2 : score >= 10 ? 1 : 0);
-    var rName = (ranksList[rIdx] && ranksList[rIdx].name) || 'Rookie';
-
-    var payload = {
-      playerId: getPlayerId(),
-      nickname: nick,
-      score: score,
-      mode: mode,
-      rankIdx: rIdx,
-      rankName: rName,
-      reason: st.status || 'over',
-      runToken: runId
-    };
-
-    setOverStatus('Submitting score to leaderboard\u2026', '');
-
-    return fetch('/api/leaderboard/submit', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'same-origin',
-      body: JSON.stringify(payload)
-    })
-      .then(function (r) { return r.json(); })
-      .then(function (res) {
-        if (res.ok) {
-          var msg = res.rank ? ('Ranked #' + res.rank + ' on leaderboard!') : 'Score recorded!';
-          setOverStatus(msg, 'success');
-          refresh();
-        } else {
-          setOverStatus(res.error || 'Failed to submit score', 'error');
-        }
-        return res;
-      })
-      .catch(function () {
-        setOverStatus('Score saved locally (server offline)', '');
-      });
   }
 
-  function load(mode) {
-    currentMode = mode || currentMode || 'all';
-    if (statusEl) {
-      statusEl.textContent = 'Loading rankings\u2026';
-      statusEl.hidden = false;
-    }
-    if (listEl) listEl.innerHTML = '';
-    if (myRankEl) myRankEl.hidden = true;
-
-    var pid = getPlayerId();
-    var url = '/api/leaderboard?mode=' + encodeURIComponent(currentMode) + '&playerId=' + encodeURIComponent(pid);
-
-    return fetch(url, { credentials: 'same-origin' })
-      .then(function (r) { return r.json(); })
-      .then(function (data) {
-        if (statusEl) statusEl.hidden = true;
-        if (!data.ok || !data.entries || !data.entries.length) {
-          if (statusEl) {
-            statusEl.textContent = 'No scores recorded yet in this category. Play a game to claim #1!';
-            statusEl.hidden = false;
-          }
-          return;
-        }
-
-        renderList(data.entries, pid);
-
-        // If player has a score and is ranked outside top 10, show their rank card
-        if (data.myRank && data.myRank.rank > data.entries.length) {
-          renderMyRankCard(data.myRank);
-        }
-      })
-      .catch(function () {
-        if (statusEl) {
-          statusEl.textContent = 'Unable to reach leaderboard server. Showing local progress.';
-          statusEl.hidden = false;
-        }
-      });
+  function saveMovement(r) {
+    if (r.duplicate) return;
+    store(MOVE_KEY, JSON.stringify({ text: movementText(r), movement: r.movement, at: Date.now() }));
   }
 
-  function renderList(entries, myPid) {
-    if (!listEl) return;
-    listEl.innerHTML = '';
+  function loadMovement() {
+    try { return JSON.parse(load(MOVE_KEY) || 'null'); } catch (e) { return null; }
+  }
 
+  // ---- dashboard ----
+  function renderDashboard() {
+    if (!pd.name) return;
+    if (!player) {
+      pd.name.textContent = '\u2014';
+      pd.rank.textContent = '\u2014'; pd.best.textContent = '0'; pd.bestMode.textContent = '';
+      pd.latest.textContent = '\u2014'; pd.games.textContent = '0'; pd.move.textContent = '\u2014';
+      pd.edit.hidden = true;
+      return;
+    }
+    pd.name.textContent = player.displayName;
+    pd.rank.textContent = player.rank ? '#' + player.rank : 'Unranked';
+    pd.best.textContent = player.bestScore;
+    pd.bestMode.textContent = player.bestScore > 0 ? modeLabel(player.bestMode) : '';
+    pd.latest.textContent = player.latestScore === null ? '\u2014' : player.latestScore;
+    pd.games.textContent = player.gamesPlayed;
+    var mv = loadMovement();
+    pd.move.textContent = mv && mv.text ? mv.text : 'Play a game to see your rank move.';
+    pd.move.className = 'pd-move' + (mv && (mv.movement === 'up' || mv.movement === 'entered') ? ' up' : mv && mv.movement === 'down' ? ' down' : '');
+    pd.edit.hidden = false;
+  }
+
+  function setPlayer(p) {
+    if (!p) return;
+    player = p;
+    registered = true;
+    store(NAME_KEY, p.displayName);
+    var certName = $('cert-name');
+    if (certName && document.activeElement !== certName) certName.value = p.displayName;
+    renderDashboard();
+  }
+
+  // ---- leaderboard list ----
+  function renderList(entries) {
+    listEl.textContent = '';
     entries.forEach(function (e) {
       var li = document.createElement('li');
-      li.className = 'lb-item' + (e.playerId === myPid ? ' is-me' : '');
+      li.className = 'lb-item' + (e.isMe ? ' is-me' : '');
 
-      // Rank circle
       var rDiv = document.createElement('div');
       rDiv.className = 'lb-rank' + (e.rank <= 3 ? ' lb-rank-' + e.rank : '');
       rDiv.textContent = e.rank;
 
-      // Info
-      var infoDiv = document.createElement('div');
-      infoDiv.className = 'lb-info';
-
+      var info = document.createElement('div');
+      info.className = 'lb-info';
       var nameSpan = document.createElement('span');
       nameSpan.className = 'lb-name';
-      nameSpan.textContent = e.nickname || 'Player';
-      if (e.playerId === myPid) {
-        var meTag = document.createElement('small');
-        meTag.style.color = 'var(--cyan)';
-        meTag.style.marginLeft = '6px';
-        meTag.textContent = '(You)';
-        nameSpan.appendChild(meTag);
+      nameSpan.textContent = e.displayName || 'Player';
+      if (e.isMe) {
+        var tag = document.createElement('small');
+        tag.style.color = 'var(--cyan)';
+        tag.style.marginLeft = '6px';
+        tag.textContent = '(You)';
+        nameSpan.appendChild(tag);
       }
 
-      var metaDiv = document.createElement('div');
-      metaDiv.className = 'lb-meta';
-
-      var modeBadge = document.createElement('span');
-      modeBadge.className = 'lb-mode-badge';
-      modeBadge.textContent = e.mode === 'nowalls' ? 'No walls' : 'Normal';
-
-      var rankPill = document.createElement('span');
-      rankPill.className = 'lb-rank-pill';
-      rankPill.textContent = e.rankName || 'Rookie';
-      var ranksObj = (window.NumberSnake && window.NumberSnake.RANKS) || [];
-      if (typeof e.rankIdx === 'number' && ranksObj[e.rankIdx]) {
-        rankPill.style.color = ranksObj[e.rankIdx].color;
+      var meta = document.createElement('div');
+      meta.className = 'lb-meta';
+      var badge = document.createElement('span');
+      badge.className = 'lb-mode-badge';
+      badge.textContent = modeLabel(e.bestMode);
+      var pill = document.createElement('span');
+      pill.className = 'lb-rank-pill';
+      var rk = ranksList()[rankIdxFor(e.bestScore)];
+      pill.textContent = rk ? rk.name : '';
+      if (rk) pill.style.color = rk.color;
+      meta.appendChild(badge);
+      if (rk) meta.appendChild(pill);
+      var date = fmtDate(e.bestScoreAchievedAt);
+      if (date) {
+        var d = document.createElement('span');
+        d.textContent = date;
+        meta.appendChild(d);
       }
 
-      var dateSpan = document.createElement('span');
-      if (e.playedAt) {
-        var d = new Date(e.playedAt);
-        dateSpan.textContent = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-      }
+      info.appendChild(nameSpan);
+      info.appendChild(meta);
 
-      metaDiv.appendChild(modeBadge);
-      metaDiv.appendChild(rankPill);
-      if (dateSpan.textContent) metaDiv.appendChild(dateSpan);
-
-      infoDiv.appendChild(nameSpan);
-      infoDiv.appendChild(metaDiv);
-
-      // Score
-      var scoreSpan = document.createElement('div');
-      scoreSpan.className = 'lb-score';
-      scoreSpan.textContent = e.score;
+      var score = document.createElement('div');
+      score.className = 'lb-score';
+      score.textContent = e.bestScore;
 
       li.appendChild(rDiv);
-      li.appendChild(infoDiv);
-      li.appendChild(scoreSpan);
-
+      li.appendChild(info);
+      li.appendChild(score);
       listEl.appendChild(li);
     });
   }
 
-  function renderMyRankCard(my) {
-    if (!myRankEl) return;
+  function renderMyRankCard(me) {
+    myRankEl.textContent = '';
     myRankEl.hidden = false;
-    myRankEl.innerHTML = '';
-
-    var leftDiv = document.createElement('div');
-    leftDiv.className = 'lb-mine-left';
-
+    var left = document.createElement('div');
+    left.className = 'lb-mine-left';
     var badge = document.createElement('span');
     badge.className = 'lb-mine-badge';
-    badge.textContent = 'YOUR RANK #' + my.rank;
-
+    badge.textContent = 'YOUR RANK #' + me.rank;
     var text = document.createElement('span');
     text.className = 'lb-mine-text';
-    text.textContent = (my.nickname || 'You') + ' \u00b7 ' + (my.mode === 'nowalls' ? 'No walls' : 'Normal');
-
-    leftDiv.appendChild(badge);
-    leftDiv.appendChild(text);
-
+    text.textContent = me.displayName + ' \u00b7 best in ' + modeLabel(me.bestMode);
+    left.appendChild(badge);
+    left.appendChild(text);
     var score = document.createElement('div');
     score.className = 'lb-mine-score';
-    score.textContent = my.score;
-
-    myRankEl.appendChild(leftDiv);
+    score.textContent = me.bestScore;
+    myRankEl.appendChild(left);
     myRankEl.appendChild(score);
   }
 
   function refresh() {
-    return load(currentMode);
+    lastRefresh = Date.now();
+    statusEl.textContent = 'Loading rankings\u2026';
+    statusEl.hidden = false;
+    return Api.get('/api/leaderboard?limit=50').then(function (data) {
+      if (!data.ok) throw new Error(data.error || 'bad response');
+      listEl.textContent = '';
+      myRankEl.hidden = true;
+      if (data.me) setPlayer(data.me);
+      if (!data.entries.length) {
+        statusEl.textContent = 'No scores yet. Play a game to claim #1!';
+        statusEl.hidden = false;
+        return;
+      }
+      statusEl.hidden = true;
+      renderList(data.entries);
+      var inList = data.entries.some(function (e) { return e.isMe; });
+      if (data.me && data.me.rank && !inList) renderMyRankCard(data.me);
+    }).catch(function () {
+      statusEl.textContent = 'Unable to reach the leaderboard server.';
+      statusEl.hidden = false;
+    });
   }
 
-  // ---- Bindings ----
-  if (tabs.all) tabs.all.addEventListener('click', function () { switchTab('all'); });
-  if (tabs.normal) tabs.normal.addEventListener('click', function () { switchTab('normal'); });
-  if (tabs.nowalls) tabs.nowalls.addEventListener('click', function () { switchTab('nowalls'); });
+  // ---- name modal ----
+  function openModal(mode) {
+    modalMode = mode;
+    var first = mode === 'register';
+    modalTitle.textContent = first ? 'Welcome to Number Snake' : 'Edit display name';
+    modalText.textContent = first
+      ? 'Choose a display name for the leaderboard. No account or password needed: this browser is your player.'
+      : 'This name is shown on the leaderboard and on your certificates.';
+    nameClose.hidden = first;
+    nameInput.value = first ? (load(NAME_KEY) || '') : (player ? player.displayName : '');
+    nameMsg.textContent = '';
+    nameMsg.className = 'auth-msg';
+    backdrop.hidden = false;
+    setTimeout(function () { nameInput.focus(); nameInput.select(); }, 30);
+  }
 
-  if (btnSaveNick && nickInput) {
-    btnSaveNick.addEventListener('click', function () {
-      var updated = setNickname(nickInput.value);
-      btnSaveNick.textContent = 'Saved!';
-      setTimeout(function () { btnSaveNick.textContent = 'Save'; }, 1200);
+  function closeModal() {
+    backdrop.hidden = true;
+    modalMode = null;
+  }
+
+  // While the name dialog is open the game must not react to the keyboard.
+  window.addEventListener('keydown', function (e) {
+    if (backdrop.hidden) return;
+    if (e.code === 'Escape' && modalMode === 'edit') { closeModal(); }
+    if (!backdrop.contains(e.target)) { e.stopImmediatePropagation(); e.preventDefault(); }
+  }, true);
+
+  nameForm.addEventListener('submit', function (e) {
+    e.preventDefault();
+    var name = nameInput.value.replace(/\s+/g, ' ').trim();
+    if (!name) { nameMsg.textContent = 'Please enter a name.'; return; }
+    nameMsg.textContent = 'Saving\u2026';
+    var req;
+    if (modalMode === 'edit' && registered) {
+      req = Api.put('/api/leaderboard/player/name', { deviceId: getDeviceId(), displayName: name });
+    } else {
+      var body = { deviceId: getDeviceId(), displayName: name };
+      var legacy = load(LEGACY_PID_KEY);
+      if (legacy) body.legacyPlayerId = legacy;
+      req = Api.post('/api/leaderboard/player', body);
+    }
+    req.then(function (res) {
+      if (!res.ok) { nameMsg.textContent = res.error || 'Could not save the name.'; return; }
+      setPlayer(res.player);
+      closeModal();
+      flushPending();
       refresh();
-    });
-    nickInput.addEventListener('keydown', function (e) {
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        btnSaveNick.click();
+    }).catch(function () { nameMsg.textContent = 'Network error. Please try again.'; });
+  });
+  nameClose.addEventListener('click', closeModal);
+  if (pd.edit) pd.edit.addEventListener('click', function () { openModal('edit'); });
+
+  // ---- score submission with an offline retry queue ----
+  function readPending() {
+    try { var a = JSON.parse(load(PENDING_KEY) || '[]'); return Array.isArray(a) ? a : []; } catch (e) { return []; }
+  }
+  function writePending(list) { store(PENDING_KEY, JSON.stringify(list.slice(-MAX_PENDING))); }
+  function enqueue(run) {
+    var list = readPending();
+    if (!list.some(function (r) { return r.gameId === run.gameId; })) list.push(run);
+    writePending(list);
+  }
+  function dequeue(gameId) {
+    writePending(readPending().filter(function (r) { return r.gameId !== gameId; }));
+  }
+
+  // Resolves with {res} on a definitive answer, {retry:true} when it should be tried again later.
+  function send(run) {
+    return Api.post('/api/leaderboard/submit', {
+      deviceId: getDeviceId(), gameId: run.gameId, score: run.score, mode: run.mode, playedAt: run.playedAt
+    }).then(function (res) {
+      if (res.ok) { dequeue(run.gameId); return { res: res }; }
+      if (res.code === 'NOT_REGISTERED') { enqueue(run); return { retry: true, needName: true }; }
+      if (res._status === 429 || res._status >= 500) { enqueue(run); return { retry: true }; }
+      dequeue(run.gameId);              // a 4xx that will never succeed: drop it
+      return { res: res };
+    }).catch(function () { enqueue(run); return { retry: true }; });
+  }
+
+  function flushPending() {
+    var list = readPending();
+    if (!list.length || !registered) return Promise.resolve();
+    return list.reduce(function (p, run) {
+      return p.then(function () { return send(run); });
+    }, Promise.resolve()).then(refresh);
+  }
+
+  function submit(modeId) {
+    var st = window.NumberSnake ? window.NumberSnake.getState() : null;
+    if (!st) return Promise.resolve();
+    var run = {
+      gameId: uuid(),
+      score: typeof st.score === 'number' ? st.score : 0,
+      mode: modeId || st.mode || 'normal',
+      playedAt: new Date().toISOString()
+    };
+    setOverStatus('Saving your score\u2026', '');
+    return send(run).then(function (out) {
+      if (out.retry) {
+        setOverStatus(out.needName ? 'Choose a display name to save your score.' : 'Score saved on this device. It will be sent when the server is back.', '');
+        if (out.needName) openModal('register');
+        return;
       }
+      var res = out.res;
+      if (!res.ok) { setOverStatus(res.error || 'Could not save the score.', 'error'); return; }
+      setPlayer(res.player);
+      saveMovement(res);
+      renderDashboard();
+      var text = movementText(res);
+      if (res.isNewBest) text = 'New personal best! ' + text;
+      setOverStatus(text, res.movement === 'down' ? '' : 'success');
+      return flushPending().then(refresh);
     });
   }
 
-  if (btnOverSubmit) {
-    btnOverSubmit.addEventListener('click', function () {
-      if (overNickInput && overNickInput.value.trim()) {
-        setNickname(overNickInput.value.trim());
-      }
-      lastSubmittedRunId = null; // force submit
-      submit();
-    });
-  }
-
+  // ---- bindings ----
   if (btnRefresh) {
     btnRefresh.addEventListener('click', function () {
       btnRefresh.textContent = 'Refreshing\u2026';
-      refresh().finally(function () {
-        setTimeout(function () { btnRefresh.textContent = 'Refresh Leaderboard'; }, 600);
-      });
+      refresh().then(function () { setTimeout(function () { btnRefresh.textContent = 'Refresh Leaderboard'; }, 500); });
     });
   }
-
   if (btnShowLb) {
     btnShowLb.addEventListener('click', function () {
-      var el = document.getElementById('leaderboard');
+      var el = $('leaderboard');
       if (el) el.scrollIntoView({ behavior: 'smooth' });
+      refresh();                                    // always fresh when opened
     });
   }
+  var lbSection = $('leaderboard');
+  if (lbSection && 'IntersectionObserver' in window) {
+    new IntersectionObserver(function (entries) {
+      if (entries[0].isIntersecting && Date.now() - lastRefresh > 10000) refresh();
+    }, { threshold: 0.15 }).observe(lbSection);
+  }
+  window.addEventListener('online', function () { flushPending(); });
 
-  // Initialize
-  syncNicknameInputs();
-  load('all');
+  // ---- boot: reuse the saved profile, or ask for a name on the first visit ----
+  renderDashboard();
+  Api.get('/api/leaderboard/player').then(function (res) {
+    if (res.ok && res.registered) {
+      setPlayer(res.player);
+      return flushPending().then(refresh);
+    }
+    if (res.ok) {
+      openModal('register');
+      return refresh();
+    }
+    throw new Error('server');
+  }).catch(function () {
+    statusEl.textContent = 'Unable to reach the leaderboard server. The game still works offline.';
+    statusEl.hidden = false;
+  });
 
-  return {
-    submit: submit,
-    load: load,
-    refresh: refresh,
-    getNickname: getNickname,
-    setNickname: setNickname,
-    getPlayerId: getPlayerId
-  };
+  return { submit: submit, refresh: refresh, getDeviceId: getDeviceId };
 })();
 
 }()); } // end browser guard

@@ -28,58 +28,19 @@
       <circle cx="19" cy="4.2" r="2" fill="#ffd23f"/>
     </symbol>
   </svg>
-  <!-- =====================================================================
-       Auth bar — injected by the backend integration; does not affect gameplay
-       ===================================================================== -->
-  <div class="auth-bar" id="auth-bar" aria-label="Account">
-    <span class="auth-status" id="auth-status" hidden>
-      Signed in as <strong id="auth-username"></strong>
-    </span>
-    <div class="auth-actions">
-      <button type="button" id="btn-logout" class="btn btn-ghost btn-small" hidden>Sign out</button>
-      <button type="button" id="btn-open-auth" class="btn btn-ghost btn-small">Sign in</button>
-    </div>
-  </div>
-
-  <!-- Auth modal -->
-  <div class="auth-modal-backdrop" id="auth-backdrop" hidden aria-modal="true" role="dialog" aria-labelledby="auth-modal-title">
+  <!-- Display-name dialog: shown on the first visit and when editing the name.
+       There are no accounts; the browser's Device ID is the player. -->
+  <div class="auth-modal-backdrop" id="name-backdrop" hidden aria-modal="true" role="dialog" aria-labelledby="name-modal-title">
     <div class="auth-modal">
-      <button type="button" class="auth-modal-close" id="btn-close-auth" aria-label="Close">&#x2715;</button>
-      <h2 class="auth-modal-title" id="auth-modal-title">Sign in</h2>
-
-      <!-- Tab switcher -->
-      <div class="auth-tabs" role="tablist">
-        <button type="button" class="auth-tab auth-tab-active" id="tab-login" role="tab" aria-selected="true" aria-controls="panel-login">Log in</button>
-        <button type="button" class="auth-tab" id="tab-register" role="tab" aria-selected="false" aria-controls="panel-register">Register</button>
-      </div>
-
-      <!-- Login panel -->
-      <div id="panel-login" role="tabpanel" aria-labelledby="tab-login">
-        <form id="form-login" class="auth-form" novalidate autocomplete="on">
-          <label class="auth-label" for="login-email">Email</label>
-          <input type="email" id="login-email" class="auth-input" placeholder="you@example.com" autocomplete="email" required maxlength="254">
-          <label class="auth-label" for="login-password">Password</label>
-          <input type="password" id="login-password" class="auth-input" placeholder="Password" autocomplete="current-password" required maxlength="128">
-          <p class="auth-msg" id="login-msg" aria-live="polite"></p>
-          <button type="submit" class="btn btn-primary auth-submit">Log in</button>
-        </form>
-      </div>
-
-      <!-- Register panel -->
-      <div id="panel-register" role="tabpanel" aria-labelledby="tab-register" hidden>
-        <form id="form-register" class="auth-form" novalidate autocomplete="off">
-          <label class="auth-label" for="reg-username">Username</label>
-          <input type="text" id="reg-username" class="auth-input" placeholder="2–30 characters" autocomplete="username" required maxlength="30">
-          <label class="auth-label" for="reg-email">Email</label>
-          <input type="email" id="reg-email" class="auth-input" placeholder="you@example.com" autocomplete="email" required maxlength="254">
-          <label class="auth-label" for="reg-password">Password</label>
-          <input type="password" id="reg-password" class="auth-input" placeholder="8+ characters" autocomplete="new-password" required maxlength="128">
-          <p class="auth-msg" id="reg-msg" aria-live="polite"></p>
-          <button type="submit" class="btn btn-primary auth-submit">Create account</button>
-        </form>
-      </div>
-
-      <p class="auth-guest-note">No account? Just <button type="button" class="auth-link-btn" id="btn-continue-guest">continue as guest</button>. Your progress is saved in the browser.</p>
+      <button type="button" class="auth-modal-close" id="btn-close-name" aria-label="Close" hidden>&#x2715;</button>
+      <h2 class="auth-modal-title" id="name-modal-title">Welcome to Number Snake</h2>
+      <p class="auth-guest-note" id="name-modal-text"></p>
+      <form id="form-name" class="auth-form" novalidate autocomplete="off">
+        <label class="auth-label" for="name-input">Display name</label>
+        <input type="text" id="name-input" class="auth-input" placeholder="Your name" maxlength="25" autocomplete="nickname" required>
+        <p class="auth-msg" id="name-msg" aria-live="polite"></p>
+        <button type="submit" class="btn btn-primary auth-submit">Save name</button>
+      </form>
     </div>
   </div>
 
@@ -191,10 +152,6 @@
           <p class="badge" id="new-record" hidden>New highest score!</p>
           <p class="rank-line" id="over-rank"></p>
           <div class="lb-submit-box" id="lb-submit-box">
-            <div class="lb-submit-row">
-              <input type="text" id="lb-over-nick" class="cert-input" maxlength="25" placeholder="Nickname for leaderboard" aria-label="Nickname for leaderboard">
-              <button type="button" id="btn-over-submit-lb" class="btn btn-ghost btn-small">Submit</button>
-            </div>
             <p class="lb-submit-status" id="lb-submit-status" aria-live="polite"></p>
           </div>
           <div class="cert-box" id="cert-box" hidden>
@@ -260,31 +217,36 @@
 
     <section class="lb" id="leaderboard" aria-labelledby="lb-title">
       <div class="lb-header">
-        <h2 class="lb-title" id="lb-title">Leaderboard</h2>
-        <div class="lb-player-bar">
-          <label for="lb-nickname-input" class="lb-player-lbl">Your Nickname:</label>
-          <div class="lb-nick-wrap">
-            <input type="text" id="lb-nickname-input" class="lb-nick-input" maxlength="25" placeholder="Player" autocomplete="nickname" aria-label="Your nickname for leaderboard">
-            <button type="button" id="lb-btn-save-nick" class="btn btn-ghost btn-small">Save</button>
-          </div>
-        </div>
+        <h2 class="lb-title" id="lb-title">Global Leaderboard</h2>
+        <span class="lb-sub">One entry per player across all modes</span>
       </div>
 
-      <!-- Mode filter tabs -->
-      <div class="lb-tabs" role="tablist" aria-label="Leaderboard mode filter">
-        <button type="button" class="lb-tab active" role="tab" aria-selected="true" data-mode="all" id="lb-tab-all">All Modes</button>
-        <button type="button" class="lb-tab" role="tab" aria-selected="false" data-mode="normal" id="lb-tab-normal">Normal</button>
-        <button type="button" class="lb-tab" role="tab" aria-selected="false" data-mode="nowalls" id="lb-tab-nowalls">No Walls</button>
+      <!-- Player dashboard -->
+      <div class="pd" id="player-dashboard" aria-label="Your player stats">
+        <div class="pd-top">
+          <div class="pd-who">
+            <span class="stat-label">Player</span>
+            <strong id="pd-name">&mdash;</strong>
+          </div>
+          <button type="button" id="pd-edit-name" class="btn btn-ghost btn-small" hidden>Edit name</button>
+        </div>
+        <div class="pd-grid">
+          <div class="pd-item"><span class="stat-label">Global rank</span><strong id="pd-rank">&mdash;</strong></div>
+          <div class="pd-item"><span class="stat-label">Personal best</span><strong id="pd-best">0</strong><small id="pd-best-mode"></small></div>
+          <div class="pd-item"><span class="stat-label">Latest score</span><strong id="pd-latest">&mdash;</strong></div>
+          <div class="pd-item"><span class="stat-label">Games played</span><strong id="pd-games">0</strong></div>
+        </div>
+        <p class="pd-move" id="pd-move">&mdash;</p>
       </div>
 
       <!-- Status (loading / error) -->
       <div class="lb-status" id="lb-status" aria-live="polite">Loading rankings...</div>
 
-      <!-- Player's own rank card (highlighted) -->
+      <!-- Your rank when you are outside the top 50 -->
       <div class="lb-mine" id="lb-my-rank" hidden></div>
 
-      <!-- Ranked list -->
-      <ol class="lb-list" id="lb-list" aria-label="High scores"></ol>
+      <!-- Ranked list (top 50) -->
+      <ol class="lb-list" id="lb-list" aria-label="Top 50 players"></ol>
 
       <div class="lb-footer">
         <button type="button" id="lb-btn-refresh" class="btn btn-ghost btn-small">Refresh Leaderboard</button>
