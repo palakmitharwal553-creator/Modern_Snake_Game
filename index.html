@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0a0d13">
+  <title>NUMBER SNAKE</title>
+  <meta name="description" content="A snake game where the food is numbered. Eat 1, 2, 3 and so on in order.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230a0d13'/%3E%3Crect x='6' y='26' width='34' height='14' rx='7' fill='%23ff2e3e'/%3E%3Crect x='38' y='14' width='22' height='36' rx='7' fill='%23e4f9ff'/%3E%3Ctext x='49' y='40' font-family='Arial' font-weight='800' font-size='24' text-anchor='middle' fill='%2306222d'%3E1%3C/text%3E%3C/svg%3E">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+    <symbol id="icon-clock" viewBox="0 0 24 24">
+      <circle cx="12" cy="13.5" r="8" fill="#fff0b8" stroke="#ffb703" stroke-width="2"/>
+      <rect x="9.6" y="1.8" width="4.8" height="2.6" rx="1" fill="#ffb703"/>
+      <path d="M12 13.5V8.8M12 13.5l3.4 2" stroke="#7a4b00" stroke-width="1.8" stroke-linecap="round" fill="none"/>
+    </symbol>
+    <symbol id="icon-plus" viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="10" fill="#34d985" stroke="#d9ffe9" stroke-width="1.6"/>
+      <path d="M12 6.8v10.4M6.8 12h10.4" stroke="#fff" stroke-width="3" stroke-linecap="round" fill="none"/>
+    </symbol>
+    <symbol id="icon-bomb" viewBox="0 0 24 24">
+      <circle cx="11" cy="14" r="8" fill="#1a1f2b" stroke="#ff5a36" stroke-width="1.6"/>
+      <path d="M6.6 12.2a5 5 0 0 1 3-2.8" stroke="rgba(255,255,255,.55)" stroke-width="1.5" stroke-linecap="round" fill="none"/>
+      <rect x="8.6" y="4.2" width="4.8" height="3" rx="1" fill="#2b3142"/>
+      <path d="M12 4.6Q15.5 2.6 18.6 4.2" stroke="#d2b26b" stroke-width="1.5" stroke-linecap="round" fill="none"/>
+      <circle cx="19" cy="4.2" r="2" fill="#ffd23f"/>
+    </symbol>
+  </svg>
+  <!-- First visit: choose a name once. It is saved on this device (no sign-in). -->
+  <div class="auth-modal-backdrop" id="name-backdrop" hidden role="dialog" aria-modal="true" aria-labelledby="name-modal-title">
+    <div class="auth-modal">
+      <h2 class="auth-modal-title" id="name-modal-title">Choose your name</h2>
+      <p class="auth-guest-note">This name is saved on this device. You will not be asked again. It appears on the leaderboard and on your certificates.</p>
+      <div class="auth-form">
+        <label class="auth-label" for="name-modal-input">Your name</label>
+        <input type="text" id="name-modal-input" class="auth-input" maxlength="25" placeholder="Your name" autocomplete="off" autocapitalize="words" spellcheck="false">
+        <p class="auth-msg" id="name-modal-msg" aria-live="polite"></p>
+        <button type="button" id="btn-name-save" class="btn btn-primary auth-submit">Start playing</button>
+      </div>
+    </div>
+  </div>
+
+  <main class="app">
+
+    <header class="top">
+      <h1 class="brand">NUMBER SNAKE</h1>
+      <span class="mode-pill" id="mode-pill" data-mode="normal">Normal</span>
+      <div class="toolbar">
+        <button type="button" id="btn-pause" class="btn btn-ghost" disabled>Pause</button>
+        <button type="button" id="btn-restart" class="btn btn-ghost" disabled>Restart</button>
+        <button type="button" id="btn-show-lb" class="btn btn-ghost">Leaderboard</button>
+        <button type="button" id="btn-sound" class="btn btn-ghost btn-icon" aria-pressed="true" aria-label="Sound on. Tap to turn off" title="Sound on">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path class="spk" d="M4 9.5v5h3.6L13 19V5L7.6 9.5z"/><path class="wave" d="M15.6 9a4.2 4.2 0 0 1 0 6M17.8 6.6a7.6 7.6 0 0 1 0 10.8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path class="mute" d="M16 9.5l5 5M21 9.5l-5 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <section class="stats" aria-label="Game status">
+      <div class="stat">
+        <span class="stat-label">Score</span>
+        <span class="stat-value" id="score">0</span>
+        <span class="stat-sub rank-sub" id="rank">Rookie</span>
+      </div>
+      <div class="stat stat-next">
+        <span class="stat-label"><span class="lbl-short">Next</span><span class="lbl-full">Next number</span></span>
+        <span class="next-tile" id="next">1</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label"><span class="lbl-short">Best</span><span class="lbl-full">Highest score</span></span>
+        <span class="stat-value" id="best">0</span>
+      </div>
+      <div class="stat">
+        <span class="stat-label">Level</span>
+        <span class="stat-value" id="level">1</span>
+        <span class="stat-sub" id="speed">6.7 moves/s</span>
+      </div>
+    </section>
+
+    <section class="stage">
+      <div class="board" id="game" data-screen="start">
+        <canvas id="board" aria-label="Game board" role="img"></canvas>
+
+        <!-- Active power-ups -->
+        <div class="fx-hud" aria-hidden="true">
+          <div class="fx-chip fx-chip-freeze" id="fx-freeze" hidden>
+            <svg class="ic" aria-hidden="true"><use href="#icon-clock"/></svg>
+            <span class="fx-text">Slow <b id="fx-freeze-t">0</b>s</span>
+            <span class="fx-track"><i id="fx-freeze-bar"></i></span>
+          </div>
+          <div class="fx-chip fx-chip-shield" id="fx-shield" hidden>
+            <svg class="ic" aria-hidden="true"><use href="#icon-plus"/></svg>
+            <span class="fx-text">Shield <b id="fx-shield-t">0</b>s</span>
+            <span class="fx-track"><i id="fx-shield-bar"></i></span>
+          </div>
+        </div>
+
+        <!-- Start screen -->
+        <div class="overlay overlay-start">
+          <div class="demo" aria-hidden="true">
+            <span class="demo-snake"></span>
+            <span class="tile">1</span>
+            <span class="tile">2</span>
+            <span class="tile">3</span>
+          </div>
+          <h2 class="overlay-title overlay-title-big">NUMBER SNAKE</h2>
+          <p class="overlay-text">Eat the numbers in order, starting with 1.</p>
+          <ul class="mini-rules">
+            <li>Steer with the arrow keys or WASD.</li>
+            <li>Every number you eat grows the snake and speeds up the game.</li>
+            <li>Grab the power-ups, avoid the bombs.</li>
+          </ul>
+          <div class="modes" role="radiogroup" aria-label="Game mode">
+            <button type="button" class="mode-btn" role="radio" aria-checked="true" data-mode="normal">
+              <span class="mode-name">Normal</span>
+              <span class="mode-desc">Walls are deadly</span>
+            </button>
+            <button type="button" class="mode-btn" role="radio" aria-checked="false" data-mode="nowalls">
+              <span class="mode-name">No walls</span>
+              <span class="mode-desc">Wrap around. Faster, longer</span>
+            </button>
+          </div>
+          <button type="button" id="btn-play" class="btn btn-primary">Play Game</button>
+        </div>
+
+        <!-- Pause screen -->
+        <div class="overlay overlay-paused">
+          <h2 class="overlay-title">PAUSED</h2>
+          <p class="overlay-text">The snake is frozen. Resume when you are ready.</p>
+          <div class="overlay-actions">
+            <button type="button" id="btn-resume" class="btn btn-primary">Resume</button>
+            <button type="button" id="btn-pause-restart" class="btn btn-ghost">Restart</button>
+            <button type="button" id="btn-pause-menu" class="btn btn-ghost">Change mode</button>
+          </div>
+        </div>
+
+        <!-- Game over screen -->
+        <div class="overlay overlay-over">
+          <h2 class="overlay-title" id="over-title">GAME OVER</h2>
+          <p class="overlay-text" id="over-reason"></p>
+          <p class="over-mode" id="over-mode"></p>
+          <div class="final">
+            <div class="final-item">
+              <span class="stat-label">Final score</span>
+              <strong id="final-score">0</strong>
+            </div>
+            <div class="final-item">
+              <span class="stat-label">Highest score</span>
+              <strong id="final-best">0</strong>
+            </div>
+          </div>
+          <p class="badge" id="new-record" hidden>New highest score!</p>
+          <p class="rank-line" id="over-rank"></p>
+          <p class="lb-submit-status" id="lb-submit-status" aria-live="polite"></p>
+          <div class="cert-box" id="cert-box" hidden>
+            <div class="cert-btns" id="cert-btns"></div>
+          </div>
+          <div class="overlay-actions">
+            <button type="button" id="btn-again" class="btn btn-primary">Play Again</button>
+            <button type="button" id="btn-menu" class="btn btn-ghost">Change mode</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="dpad" id="dpad" aria-label="Touch controls">
+        <button type="button" class="dpad-btn dpad-up" data-dir="up" aria-label="Move up"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 6 4.5 16h15z"/></svg></button>
+        <button type="button" class="dpad-btn dpad-left" data-dir="left" aria-label="Move left"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 12 16 4.5v15z"/></svg></button>
+        <button type="button" class="dpad-btn dpad-right" data-dir="right" aria-label="Move right"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 12 8 4.5v15z"/></svg></button>
+        <button type="button" class="dpad-btn dpad-down" data-dir="down" aria-label="Move down"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 18 4.5 8h15z"/></svg></button>
+      </div>
+    </section>
+
+    <section class="rules" aria-labelledby="rules-title">
+      <h2 id="rules-title">How to play</h2>
+      <div class="rules-grid">
+      <div class="rules-col">
+      <ol>
+        <li>Collect the numbers in order: 1, then 2, then 3, and keep counting.</li>
+        <li>Each number you eat adds 1 to your score and grows your snake.</li>
+        <li>The game speeds up as your score climbs, up to a playable limit.</li>
+        <li><strong>Normal:</strong> touching a wall or your own body ends the game.</li>
+        <li><strong>No walls:</strong> the edges wrap around. You only die on your own body or a bomb, but the game speeds up sooner and each number adds 2 segments.</li>
+        <li><strong>Ranks:</strong> your score decides your rank: Rookie, Explorer (10), Skilled (25), Pro (50), Expert (80) and Legend (120).</li>
+        <li><strong>Certificate:</strong> you earn a certificate at 50 (Pro), 80 (Expert) and 120 (Legend) points. Enter your name on the game over screen and download it.</li>
+      </ol>
+      </div>
+      <div class="rules-col">
+      <h3 class="rules-sub">Power-ups</h3>
+      <ul class="legend">
+        <li><svg class="ic" aria-hidden="true"><use href="#icon-clock"/></svg><span><strong>Stopwatch</strong> slows the game to level 1 or 2 speed for about 35 seconds. Scoring and growth carry on as usual.</span></li>
+        <li><svg class="ic" aria-hidden="true"><use href="#icon-plus"/></svg><span><strong>Plus</strong> lets you pass through walls for 12 seconds (Normal mode only). You come out on the opposite side.</span></li>
+        <li><svg class="ic" aria-hidden="true"><use href="#icon-bomb"/></svg><span><strong>Bomb</strong> ends the game if you eat it. It disappears on its own after a few seconds.</span></li>
+      </ul>
+      <p class="rules-controls"><strong>Controls:</strong> arrow keys or WASD to steer, Space or P to pause. On the start screen, left / right (or 1 / 2) switches mode. On a touch screen, swipe on the board or use the arrow pad.</p>
+
+      </div>
+      <div class="rules-col">
+      <h3 class="rules-sub">Your progress</h3>
+      <div class="progress">
+        <div class="prog-grid">
+          <div class="prog-item"><span class="stat-label">Games played</span><strong id="p-games">0</strong></div>
+          <div class="prog-item"><span class="stat-label">Highest rank</span><strong id="p-rank">Rookie</strong></div>
+          <div class="prog-item"><span class="stat-label">Best: Normal</span><strong id="p-best-normal">0</strong></div>
+          <div class="prog-item"><span class="stat-label">Best: No walls</span><strong id="p-best-nowalls">0</strong></div>
+          <div class="prog-item"><span class="stat-label">Certificates</span><strong id="p-certs">0</strong></div>
+        </div>
+        <h4 class="prog-title">Recent runs</h4>
+        <ul class="prog-history" id="p-history"></ul>
+        <button type="button" id="btn-reset-progress" class="btn btn-ghost btn-small">Reset progress</button>
+      </div>
+      </div>
+      </div>
+    </section>
+
+    <section class="lb" id="leaderboard" aria-labelledby="lb-title">
+      <div class="lb-header">
+        <h2 class="lb-title" id="lb-title">Leaderboard</h2>
+        <div class="lb-player-bar">
+          <label for="lb-nickname-input" class="lb-player-lbl">Your Name:</label>
+          <div class="lb-nick-wrap">
+            <input type="text" id="lb-nickname-input" class="lb-nick-input" maxlength="25" placeholder="Your name" autocomplete="off" aria-label="Your name">
+            <button type="button" id="lb-btn-save-nick" class="btn btn-ghost btn-small">Save</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Mode filter tabs -->
+      <div class="lb-tabs" role="tablist" aria-label="Leaderboard mode filter">
+        <button type="button" class="lb-tab active" role="tab" aria-selected="true" data-mode="normal" id="lb-tab-normal">Normal</button>
+        <button type="button" class="lb-tab" role="tab" aria-selected="false" data-mode="nowalls" id="lb-tab-nowalls">No Walls</button>
+        <button type="button" class="lb-tab" role="tab" aria-selected="false" data-mode="all" id="lb-tab-all">Overall</button>
+      </div>
+
+      <!-- Status (loading / error) -->
+      <div class="lb-status" id="lb-status" aria-live="polite">Loading rankings…</div>
+
+      <!-- Player's own rank card (highlighted) -->
+      <div class="lb-mine" id="lb-my-rank" hidden></div>
+
+      <!-- Ranked list -->
+      <ol class="lb-list" id="lb-list" aria-label="High scores"></ol>
+
+      <div class="lb-footer">
+        <button type="button" id="lb-btn-refresh" class="btn btn-ghost btn-small">Refresh Leaderboard</button>
+      </div>
+    </section>
+
+  </main>
+
+  <p class="sr-only" id="announce" aria-live="polite"></p>
+  <script src="script.js"></script>
+</body>
+</html>
