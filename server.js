@@ -1,10 +1,3 @@
-/* server.js
-   Express entry point for Number Snake.
-   - Serves static game files (index.html, style.css, script.js).
-   - Mounts /api/auth, /api/runs, /api/certs, /api/leaderboard.
-   - Manages sessions with connect-mongo when Atlas is active. */
-
-'use strict';
 
 require('dotenv').config();
 
@@ -13,119 +6,166 @@ const session = require('express-session');
 const MongoStore = require('connect-mongo');
 const path = require('path');
 
-const { connect, close, isAtlasConnected, getClient } = require('./db/mongo');
+const {
+  connect,
+  close,
+  isAtlasConnected,
+  getClient
+} = require('./db/mongo');
 
-const authRouter = require('./routes/auth');
-const runsRouter = require('./routes/runs');
-const certsRouter = require('./routes/certs');
-const leaderboardRouter = require('./routes/leaderboard');
+const authRoutes = require('./routes/auth');
+const runRoutes = require('./routes/runs');
+const certRoutes = require('./routes/certs');
+const leaderboardRoutes = require('./routes/leaderboard');
 
 const app = express();
+
 const PORT = parseInt(process.env.PORT || '3000', 10);
 const isProd = process.env.NODE_ENV === 'production';
 
-// Body parsing
-app.use(express.json({ limit: '32kb' }));
-
-// ---------------------------------------------------------------------------
-// Startup & Middleware Initialization
-// ---------------------------------------------------------------------------
 async function start() {
   try {
-    // 1. Establish database connection (Atlas with resilient fallback)
+    // Connect to the database
     await connect();
 
-    // 2. Configure session store
-    let sessionStore;
-    if (isAtlasConnected() && getClient()) {
-      sessionStore = MongoStore.create({
-        client: getClient(),
-        dbName: 'number_snake_db',
-        collectionName: 'sessions',
-        ttl: 7 * 24 * 60 * 60,
-        autoRemove: 'native'
-      });
-      console.log('[session] connect-mongo session store active in collection "sessions".');
-    } else {
-      console.log('[session] Using local session store (Atlas not connected).');
+    // Require a secure session secret in production
+    const sessionSecret =
+      process.env.SESSION_SECRET ||
+      (isProd ? null : 'number-snake-local-development-secret');
+
+    if (!sessionSecret) {
+      throw new Error(
+        'SESSION_SECRET must be configured in production.'
+      );
     }
 
-    const sessionSecret = process.env.SESSION_SECRET || 'number_snake_default_dev_secret_key_84920';
+    // Configure session storage
+    let sessionStore;
+
+    if (isAtlasConnected()) {
+      sessionStore = MongoStore.create({
+        client: getClient(),
+        collectionName: 'sessions',
+        ttl: 7 * 24 * 60 * 60
+      });
+
+      console.log(
+        '[session] MongoDB session store active.'
+      );
+    } else {
+      if (isProd) {
+        throw new Error(
+          'MongoDB Atlas must be connected in production.'
+        );
+      }
+
+      console.warn(
+        '[session] Using temporary local MemoryStore for development.'
+      );
+    }
+
+    app.use(express.json());
+    app.use(express.urlencoded({ extended: true }));
 
     app.use(
       session({
+        name: 'ns_sid',
         secret: sessionSecret,
         resave: false,
         saveUninitialized: false,
-        store: sessionStore, // undefined falls back to MemoryStore cleanly
+        store: sessionStore,
         cookie: {
           httpOnly: true,
-          sameSite: 'lax',
           secure: isProd,
+          sameSite: 'lax',
           maxAge: 7 * 24 * 60 * 60 * 1000
-        },
-        name: 'ns_sid'
+        }
       })
     );
 
-    // 3. API Routes
-    app.use('/api', authRouter);
-    app.use('/api/runs', runsRouter);
-    app.use('/api/certs', certsRouter);
-    app.use('/api/leaderboard', leaderboardRouter);
+    // API routes
+    app.use('/api/auth', authRoutes);
+    app.use('/api/runs', runRoutes);
+    app.use('/api/certs', certRoutes);
+    app.use('/api/leaderboard', leaderboardRoutes);
 
-    // 4. Static assets
+    // Static frontend
     app.use(express.static(path.join(__dirname)));
 
-    // Fallback: any non-API request returns index.html
-    app.get('*', (req, res) => {
-      if (!req.path.startsWith('/api')) {
-        res.sendFile(path.join(__dirname, 'index.html'));
-      } else {
-        res.status(404).json({ error: 'Endpoint not found' });
+    // Serve the game frontend for non-API routes
+    app.get(/.*/, (req, res, next) => {
+      if (req.path.startsWith('/api/')) {
+        return next();
       }
+
+      res.sendFile(path.join(__dirname, 'index.html'));
+    });
+
+    // API 404 handler
+    app.use('/api', (req, res) => {
+      res.status(404).json({
+        success: false,
+        message: 'API endpoint not found.'
+      });
     });
 
     // Error handler
-    // eslint-disable-next-line no-unused-vars
-    app.use((err, req, res, _next) => {
-      console.error('[server] Internal error:', err.message);
-      res.status(500).json({ error: 'Internal server error.' });
+    app.use((err, req, res, next) => {
+      console.error('[server] Error:', err);
+
+      res.status(err.status || 500).json({
+        success: false,
+        message: isProd
+          ? 'Internal server error.'
+          : err.message
+      });
     });
 
-    // Listen with automatic fallback if primary port is in use
-    const server = app.listen(PORT, () => {
-      console.log(`[server] NUMBER SNAKE ready at http://localhost:${PORT}`);
-      console.log(`[server] Database mode: ${isAtlasConnected() ? 'MongoDB Atlas (number_snake_db)' : 'Persistent Local DB (data/db.json)'}`);
+    // Listen on Render's assigned port
+    const server = app.listen(PORT, '0.0.0.0', () => {
+      console.log(
+        `[server] NUMBER SNAKE ready on port ${PORT}`
+      );
+
+      console.log(
+        `[server] Database mode: ${
+          isAtlasConnected()
+            ? 'MongoDB Atlas'
+            : 'Local development database'
+        }`
+      );
     });
 
-    server.on('error', (err) => {
-      if (err.code === 'EADDRINUSE') {
-        const altPort = PORT === 3000 ? 3001 : PORT + 1;
-        console.warn(`[server] Port ${PORT} in use, automatically switching to http://localhost:${altPort}`);
-        app.listen(altPort, () => {
-          console.log(`[server] NUMBER SNAKE ready at http://localhost:${altPort}`);
-          console.log(`[server] Database mode: ${isAtlasConnected() ? 'MongoDB Atlas (number_snake_db)' : 'Persistent Local DB (data/db.json)'}`);
-        });
-      } else {
-        console.error('[server] Server error:', err.message);
-      }
-    });
-  } catch (err) {
-    console.error('[server] Boot error:', err.message);
+    // Graceful shutdown
+    const shutdown = async (signal) => {
+      console.log(`[server] ${signal} received. Shutting down...`);
+
+      server.close(async () => {
+        try {
+          await close();
+          console.log('[server] Shutdown complete.');
+          process.exit(0);
+        } catch (error) {
+          console.error('[server] Shutdown error:', error);
+          process.exit(1);
+        }
+      });
+    };
+
+    process.on('SIGTERM', () => shutdown('SIGTERM'));
+    process.on('SIGINT', () => shutdown('SIGINT'));
+
+  } catch (error) {
+    console.error('[server] Startup failed:', error);
+
+    try {
+      await close();
+    } catch (closeError) {
+      console.error('[server] Database close error:', closeError);
+    }
+
     process.exit(1);
   }
 }
-
-// Graceful shutdown
-process.on('SIGINT', async () => {
-  console.log('\n[server] Shutting down gracefully...');
-  await close();
-  process.exit(0);
-});
-process.on('SIGTERM', async () => {
-  await close();
-  process.exit(0);
-});
 
 start();
